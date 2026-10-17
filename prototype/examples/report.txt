@@ -1,0 +1,22 @@
+PDF DIFF REPORT
+========================================================================
+Rev A      OHC0003_rev-_v28.pdf           Rev -   26 pages
+Rev B      OHC0003_revA_v29.pdf           Rev A   26 pages
+Generated  2026-10-17 10:16 (Europe/Oslo)
+Grid       Border zone on 1/26 sheets, rows A-D, columns 1-8 (high confidence)
+Totals     28 changes: 2 added, 0 removed, 26 modified
+========================================================================
+
+Repeated on many sheets (title block) - listed once
+------------------------------------------------------------------------
+All sheets   -       Modified  Text "-" -> "A" (26/26 sheets)
+
+Sheet 1/26 OHC0003 (Rev A p.1 / Rev B p.1) - 1 change
+------------------------------------------------------------------------
+Sheet 1/26   D1–D3   Added     Text "FN 21: EXTENDED INDICA TO RING; PAINTED RIN..." + geometry
+
+Sheet 22/26 OHC0003-A-4RUDGB3 (Rev A p.22 / Rev B p.22) - 1 change
+------------------------------------------------------------------------
+Sheet 22/26  -       Added     Text "PAINT INSIDE OF RING FED-STD-595, FS37875, ..." + geometry
+
+No other changes on 24 sheet(s): 2/26, 3/26, 4/26, 5/26, 6/26, 7/26, 8/26, 9/26, 10/26, 11/26, 12/26, 13/26, 14/26, 15/26, 16/26, 17/26, 18/26, 19/26, 20/26, 21/26, 23/26, 24/26, 25/26, 26/26

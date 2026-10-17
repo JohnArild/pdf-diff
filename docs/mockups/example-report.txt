@@ -1,0 +1,35 @@
+PDF DIFF REPORT
+==============================================================
+Rev A      A-102_Ground_Floor.pdf      Rev 3   6 pages
+Rev B      A-102_Ground_Floor_v2.pdf   Rev 4   7 pages
+Generated  2026-10-17 09:30 (Europe/Oslo)
+Grid       Border zone, rows A-F, columns 1-4 (auto, high confidence)
+Totals     23 changes: 9 added, 5 removed, 9 modified
+==============================================================
+
+Sheet A-102 (Rev A p.2 / Rev B p.2) - 9 changes
+--------------------------------------------------------------
+Sheet A-102  A2–B2   Added     Wall (partition, 14 segments)
+Sheet A-102  B2      Added     Door swing (arc)
+Sheet A-102  B3      Modified  Text "OFFICE" -> "MEETING"
+Sheet A-102  C2      Removed   Column (160x160 solid fill)
+Sheet A-102  C2–D2   Removed   Wall (storage partition, 4 segments)
+Sheet A-102  D3      Modified  Text "4800" -> "5100"
+Sheet A-102  E1–E3   Added     Text "NOTE 7: New partition wall EI30..."
+Sheet A-102  F3      Modified  Text "2026-08-14" -> "2026-10-02"
+Sheet A-102  F4      Modified  Text "REV 3" -> "REV 4"
+
+Page 4 (Rev B only, no sheet number found) - 1 change
+--------------------------------------------------------------
+Page 4       -       Added     Page (inserted in Rev B)
+
+Sheet A-104 (Rev A p.4 / Rev B p.5) - 13 changes
+--------------------------------------------------------------
+Sheet A-104  A1      Modified  Text "SECTION A-A" -> "SECTION A-A (REV)"
+Sheet A-104  B2–B4   Added     Line (beam, 6 segments)
+Sheet A-104  B3      Removed   Line (wall segment)
+Sheet A-104  C1      Modified  Line (stroke width 0.35 -> 0.50 mm)
+Sheet A-104  C3      Added     Hatch (insulation, 1 fill)
+Sheet A-104  D2      Modified  Text "+3.600" -> "+3.750"
+Sheet A-104  D4      Removed   Polygon (window frame)
+...
