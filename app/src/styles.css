@@ -77,6 +77,9 @@ button:disabled { opacity: .45; cursor: default }
 .h-removed { fill: rgba(229, 72, 77, .14); stroke: #e5484d }
 .h-added { fill: rgba(48, 164, 108, .16); stroke: #30a46c }
 .h-modified { fill: rgba(245, 165, 36, .22); stroke: #f5a524 }
+.h-moved, .h-resized { fill: rgba(110, 86, 207, .2); stroke: #8e7cf0 }
+.ghost rect { fill: none; stroke: #b9adff; stroke-opacity: .95 }
+.ghost line { stroke: #b9adff }
 .k-graphics { stroke-dasharray: 4 2 }
 .folded { fill-opacity: .5; stroke-opacity: .75; stroke-dasharray: 2 2 }
 .sel { fill-opacity: 1 }
@@ -89,10 +92,11 @@ button:disabled { opacity: .45; cursor: default }
 .exp { display: flex; align-items: center; border: 1px solid #3a4150; border-radius: 7px; overflow: hidden; font-size: 12px; font-weight: 500; color: #e5e7eb }
 .exp span { padding: 5px 10px; background: #232833 }
 .exp i { font-style: normal; padding: 5px 8px; background: #1b1f27; border-left: 1px solid #3a4150; color: #9ca3af; font-family: "DejaVu Sans Mono", Menlo, monospace }
-.stats { display: flex; gap: 8px; margin-top: 12px }
-.st { flex: 1; padding: 8px 10px; border-radius: 8px; background: #1d2027; border: 1px solid #2b303a }
+.stats { display: flex; gap: 6px; margin-top: 12px }
+.st { flex: 1; min-width: 0; padding: 8px 9px; border-radius: 8px; background: #1d2027; border: 1px solid #2b303a }
 .st b { display: block; font-size: 18px }
-.st span { font-size: 11px; color: #9ca3af }
+.st span { font-size: 11px; color: #9ca3af; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block }
+.st.mov b { color: #a594f9 }
 .st.add b { color: #4cc38a } .st.rem b { color: #ff8589 } .st.mod b { color: #f5b84a }
 .filters { display: flex; gap: 8px; padding: 6px 18px 12px; border-bottom: 1px solid #262a33 }
 .chip { padding: 5px 11px; border-radius: 999px; border: 1px solid #2b303a; color: #cbd5e1; font-size: 12px; display: inline-flex; gap: 6px; align-items: center; white-space: nowrap }
@@ -106,6 +110,7 @@ button:disabled { opacity: .45; cursor: default }
 .row:hover { background: #1b1f27 }
 .row.sel { background: #1e2430; border-left-color: #3b82f6 }
 .dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 4px; flex: none }
+.dot.moved, .dot.resized { background: #6e56cf }
 .dot.added { background: #30a46c } .dot.removed { background: #e5484d } .dot.modified { background: #f5a524 }
 .rb { flex: 1; min-width: 0 }
 .rt { color: #f3f4f6; font-weight: 500; display: flex; gap: 7px; align-items: center }

@@ -35,7 +35,8 @@ export interface PagePair {
 }
 
 export type ChangeKind = 'text' | 'graphics' | 'page';
-export type ChangeOp = 'added' | 'removed' | 'modified';
+/** moved = same content at a new position; resized = same shape type with a new size (graphics only). */
+export type ChangeOp = 'added' | 'removed' | 'modified' | 'moved' | 'resized';
 
 export interface Change {
   id: string;
@@ -50,6 +51,14 @@ export interface Change {
   detail?: string;
   /** graphics: number of differing pixels / region area */
   pixels?: number;
+  /** moved/resized: displacement of the B box against the A box (pt, top-left origin: +dy = down), page offset removed */
+  move?: [number, number];
+  /** resized: size on A and on B (pt) and scale factors B/A */
+  sizeA?: [number, number];
+  sizeB?: [number, number];
+  scale?: [number, number];
+  /** graphics found by the vector layer: what was drawn, e.g. "Filled box", "Line", "Shape" */
+  shape?: string;
   /** grid reference such as "D3" or "C2–C3"; null until grid detection (phase 2) */
   gridRef: string | null;
   /** title-block change etc.; filled by folding */

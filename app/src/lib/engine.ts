@@ -3,7 +3,9 @@ import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import type { DiffResult, DocData, PageData } from './types';
 import { itemsToWords, type RawTextItem } from './words';
-import { finalize, graphicsChanges, type TextStageResult } from './engine-core';
+import { finalize, graphicsChanges, vectorChanges, type TextStageResult } from './engine-core';
+import { extractShapes, type OpsTable, type Shape } from './vector';
+import type { RasterJob, RasterResult } from '../workers/raster.worker';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 export type PDFDoc = pdfjs.PDFDocumentProxy;
@@ -45,6 +47,13 @@ function runWorker<T>(w: Worker, msg: unknown, transfer: Transferable[] = []): P
 }
 
 /** Raster diff resolution: 150 DPI, capped so the long side stays within RASTER_MAX_PX pixels. */
+/** Painted paths of one page from its operator list (separate from the render cache, so data is untouched). */
+export async function pageShapes(pdf: PDFDoc, index: number): Promise<Shape[]> {
+  const page = await pdf.getPage(index + 1);
+  const ol = await page.getOperatorList();
+  return extractShapes(ol.fnArray, ol.argsArray, pdfjs.OPS as unknown as OpsTable, page.getViewport({ scale: 1 }).transform);
+}
+
 export const RASTER_DPI = 150;
 export const RASTER_MAX_PX = 4200;
 
@@ -74,11 +83,14 @@ export async function compare(A: LoadedDoc, B: LoadedDoc, onProgress: (done: num
       const d = cb.getContext('2d')!.getImageData(0, 0, cb.width, cb.height);
       bs.push({ rgba: d.data, w: d.width, h: d.height, offset: off });
     }
-    const res = await runWorker<{ offset: [number, number]; regions: import('./raster').RasterRegion[] }>(rw,
-      { id: i, scale, a: { rgba: a.data, w: a.width, h: a.height }, b: bs,
-        textA: t.perPair[i].changes.flatMap(c => (c.bboxA ? [c.bboxA] : [])), textB: t.perPair[i].changes.flatMap(c => (c.bboxB ? [c.bboxB] : [])) }, [a.data.buffer, ...bs.map(x => x.rgba.buffer)]);
+    const [shapesA, shapesB] = await Promise.all([pageShapes(A.pdf, p.a), pageShapes(B.pdf, p.b)]);
+    const wordsA = A.data.pages[p.a].words.map(w => w.bbox), wordsB = B.data.pages[p.b].words.map(w => w.bbox);
+    const res = await runWorker<RasterResult>(rw,
+      { id: i, scale, a: { rgba: a.data, w: a.width, h: a.height }, b: bs, textA: wordsA, textB: wordsB, shapesA, shapesB } satisfies RasterJob,
+      [a.data.buffer, ...bs.map(x => x.rgba.buffer)]);
     const pr = t.perPair[i];
     pr.offset = res.offset;
+    pr.changes.push(...vectorChanges(res.vec, i, res.offset));
     pr.changes.push(...graphicsChanges(res.regions, pr.changes, i, res.offset));
   }
   rw.terminate();

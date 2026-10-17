@@ -68,3 +68,24 @@ describe('formatReport', () => {
     expect(txt.endsWith('\n')).toBe(true);
   });
 });
+
+describe('describe moved / resized', () => {
+  const base = { id: 'x', pair: 0, gridRef: null } as const;
+  it('text moved', () => {
+    expect(describeChange({ ...base, kind: 'text', op: 'moved', bboxA: [0, 0, 1, 1], bboxB: [0, 0, 1, 1], before: 'Hello', after: 'Hello', move: [120, -40] }))
+      .toBe('Text "Hello" moved dx=+120.0 dy=-40.0 pt');
+  });
+  it('graphics resized and moved', () => {
+    expect(describeChange({ ...base, kind: 'graphics', op: 'resized', bboxA: [0, 0, 100, 60], bboxB: [0, 0, 160, 90], sizeA: [100, 60], sizeB: [160, 90], scale: [1.6, 1.5], shape: 'Filled box' }))
+      .toBe('Filled box 100x60 -> 160x90 pt (x1.60 x1.50)');
+    expect(describeChange({ ...base, kind: 'graphics', op: 'moved', bboxA: [0, 0, 1, 1], bboxB: [0, 0, 1, 1], move: [200, 100], shape: 'Filled box' }))
+      .toBe('Filled box moved dx=+200.0 dy=+100.0 pt');
+  });
+  it('lists moved/resized in the totals only when present', () => {
+    const r = sample();
+    r.perPair[0].changes.push({ ...base, id: 'mv', kind: 'text', op: 'moved', bboxA: [0, 0, 1, 1], bboxB: [5, 5, 6, 6], before: 'X', after: 'X', move: [5, 5] });
+    const t = formatReport(r, { nameA: 'a', nameB: 'b', pagesA: 3, pagesB: 3, generated: new Date(0), timeZone: 'UTC' });
+    expect(t).toContain('Totals     6 changes: 1 added, 1 removed, 3 modified, 1 moved');
+    expect(t).toMatch(/^Sheet 1\/3    -       Moved     Text "X" moved dx=\+5\.0 dy=\+5\.0 pt$/m);
+  });
+});

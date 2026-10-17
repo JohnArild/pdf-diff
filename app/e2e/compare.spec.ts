@@ -12,7 +12,9 @@ test('OpenHornet OHC0003 rev - -> rev A', async ({ page }) => {
   expect(s.report).toContain('All sheets   -       Modified  Text "-" -> "A" (26/26 sheets)');
   // sheet 1: added revision-history row
   const s1 = section(s.report, '1/26');
-  expect(s1[0]).toContain('- 1 change');
+  // ... and the revision-history table outline + 3 column lines grow by one row: one grouped "Resized" change
+  expect(s1[0]).toContain('- 2 changes');
+  expect(s1.some(l => /Resized\s+4 shapes 557x56 -> 557x88 pt/.test(l))).toBe(true);
   expect(s1.some(l => /Added\s+Text "A FN 21: EXTENDED INDICA/.test(l))).toBe(true);
   // sheet 22: added paint note
   const s22 = section(s.report, '22/26');
@@ -22,7 +24,7 @@ test('OpenHornet OHC0003 rev - -> rev A', async ({ page }) => {
   expect(s22[0]).toContain('- 2 changes');
   expect(s.report).toMatch(/^Rev A .* Rev -   26 pages$/m);
   expect(s.report).toMatch(/^Rev B .* Rev A   26 pages$/m);
-  expect(s.report).toContain('Totals     29 changes: 3 added, 0 removed, 26 modified');
+  expect(s.report).toContain('Totals     30 changes: 3 added, 0 removed, 26 modified, 1 resized');
   expect(s.report).toContain('No other changes on 24 sheet(s)');
   // UI: the counts and the folded row are shown
   await expect(page.getByTestId('folded-row').first()).toContainText('All sheets');

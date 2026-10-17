@@ -24,7 +24,8 @@ function useSize(ref: React.RefObject<HTMLDivElement | null>) {
   return s;
 }
 
-function Pane({ side, doc, pageIdx, page, changes, view, setView, selected, onSelect, rev, label }: {
+function Pane({ side, doc, pageIdx, page, changes, view, setView, selected, onSelect, rev, label, offset }: {
+  offset: [number, number];
   side: 'A' | 'B'; doc: LoadedDoc; pageIdx: number | null; page: PageData | null; changes: Change[];
   view: ViewState; setView: (v: ViewState) => void; selected: string | null; onSelect: (id: string) => void; rev?: string | null; label: string;
 }) {
@@ -83,6 +84,18 @@ function Pane({ side, doc, pageIdx, page, changes, view, setView, selected, onSe
           <div className="sheetwrap" style={{ left, top, width: wPx, height: hPx }}>
             <canvas ref={canvas} style={{ width: wPx, height: hPx }} />
             <svg className="hl" viewBox={`0 0 ${page.width} ${page.height}`} width={wPx} height={hPx}>
+              <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#b9adff" /></marker></defs>
+              {side === 'B' && vis.filter(c => (c.op === 'moved' || c.op === 'resized') && c.bboxA && c.bboxB).map(c => {
+                // ghost of the old position (in B's frame) and an arrow to the new one
+                const a = c.bboxA!, b = c.bboxB!, g: BBox = [a[0] + offset[0], a[1] + offset[1], a[2] + offset[0], a[3] + offset[1]];
+                const sw = 1.4 / eff;
+                return (
+                  <g key={c.id + 'g'} className={`ghost ${selected === c.id ? 'sel' : ''}`} style={{ strokeWidth: sw }} pointerEvents="none">
+                    <rect x={g[0]} y={g[1]} width={g[2] - g[0]} height={g[3] - g[1]} style={{ strokeDasharray: `${4 / eff} ${3 / eff}` }} />
+                    <line x1={(g[0] + g[2]) / 2} y1={(g[1] + g[3]) / 2} x2={(b[0] + b[2]) / 2} y2={(b[1] + b[3]) / 2} markerEnd="url(#arrow)" />
+                  </g>
+                );
+              })}
               {vis.map(c => {
                 const b = (side === 'A' ? c.bboxA : c.bboxB) as BBox;
                 const p = Math.max(1.5, 3 / eff);
@@ -128,8 +141,8 @@ export default function Viewer({ result, docA, docB, pair, view, setView, select
   }, [view.focus]);
   return (
     <div className="panes" ref={wrap}>
-      <Pane side="A" doc={docA} pageIdx={p.a} page={pageA} changes={changes} view={view} setView={setView} selected={selected} onSelect={onSelect} rev={p.a !== null ? result.sheetsA[p.a]?.rev : null} label={p.label} />
-      <Pane side="B" doc={docB} pageIdx={p.b} page={pageB} changes={changes} view={view} setView={setView} selected={selected} onSelect={onSelect} rev={p.b !== null ? result.sheetsB[p.b]?.rev : null} label={p.label} />
+      <Pane side="A" offset={pr?.offset ?? [0, 0]} doc={docA} pageIdx={p.a} page={pageA} changes={changes} view={view} setView={setView} selected={selected} onSelect={onSelect} rev={p.a !== null ? result.sheetsA[p.a]?.rev : null} label={p.label} />
+      <Pane side="B" offset={pr?.offset ?? [0, 0]} doc={docB} pageIdx={p.b} page={pageB} changes={changes} view={view} setView={setView} selected={selected} onSelect={onSelect} rev={p.b !== null ? result.sheetsB[p.b]?.rev : null} label={p.label} />
     </div>
   );
 }

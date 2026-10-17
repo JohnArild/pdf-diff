@@ -1,5 +1,5 @@
 import type { BBox, Change, ChangeOp, Word } from './types';
-import { myers, charRefine, type Op } from './myers';
+import { myers, charRefine } from './myers';
 import { readingOrder, unionBox, boxesNear, cx, cy } from './words';
 
 /** Global B-minus-A page offset estimated from words whose text is unique on both pages. */
@@ -35,26 +35,38 @@ const join = (ws: Word[]) => ws.map(w => w.text).join(' ');
 let seq = 0;
 export function newId(prefix: string) { return `${prefix}${++seq}`; }
 
+/** Tolerance (pt) below which a matched word counts as "not moved" (after page alignment). */
+export const MOVE_TOL = 1;
+
+const shiftBox = (b: BBox, dx: number, dy: number): BBox => [b[0] + dx, b[1] + dy, b[2] + dx, b[3] + dy];
+
 /**
- * Word-level Myers diff in reading order, with character refinement for replaced spans.
- * Returns text changes with boxes on A (removed/modified) and B (added/modified).
+ * Text diff of one page pair.
+ * 1. Position anchoring: a word with the same text at the same place on both pages (within MOVE_TOL after the
+ *    page offset) is unchanged. This is what makes isolated labels on drawings robust to reading-order noise.
+ * 2. A word-level Myers diff in reading order over the remaining words. Equal pairs there are the same text at a
+ *    different place: they become "moved" changes, grouped by common displacement. Delete/insert runs are split
+ *    spatially; a deletion with an insertion at (nearly) the same place is "modified", with character refinement.
+ * 3. Removed and added clusters with identical text are paired into "moved" as well.
  */
 export function diffWords(wa: Word[], wb: Word[], pair: number, offset: [number, number] = [0, 0]): Change[] {
   const [ox, oy] = offset; // B-minus-A page shift, compensated when comparing positions
   const A = readingOrder(wa), B = readingOrder(wb);
-  const ops = myers(A.map(w => w.text), B.map(w => w.text));
-  // A word that Myers reports as deleted and re-inserted at the same spot only moved in reading order
-  // (e.g. a neighbouring line changed height); treat those as unchanged.
-  const same = new Set<Op>();
-  const insByText = new Map<string, Op[]>();
-  for (const o of ops) if (o.type === 'insert') insByText.set(B[o.bIndex].text, [...(insByText.get(B[o.bIndex].text) ?? []), o]);
-  for (const o of ops) {
-    if (o.type !== 'delete') continue;
-    const wa0 = A[o.aIndex], cand = insByText.get(wa0.text) ?? [];
-    const k = cand.findIndex(q => !same.has(q) && Math.hypot(cx(B[q.bIndex].bbox) - ox - cx(wa0.bbox), cy(B[q.bIndex].bbox) - oy - cy(wa0.bbox)) < 1.5);
-    if (k >= 0) { same.add(o); same.add(cand[k]); }
+  // 1. anchors
+  const usedB = new Set<number>();
+  const bByText = new Map<string, number[]>();
+  B.forEach((w, j) => bByText.set(w.text, [...(bByText.get(w.text) ?? []), j]));
+  const freeA: Word[] = [];
+  for (const w of A) {
+    const j = (bByText.get(w.text) ?? []).find(k => !usedB.has(k) &&
+      Math.abs(cx(B[k].bbox) - ox - cx(w.bbox)) <= MOVE_TOL && Math.abs(cy(B[k].bbox) - oy - cy(w.bbox)) <= MOVE_TOL);
+    if (j === undefined) freeA.push(w); else usedB.add(j);
   }
+  const freeB = B.filter((_, j) => !usedB.has(j));
+  // 2. Myers over the rest
+  const ops = myers(freeA.map(w => w.text), freeB.map(w => w.text));
   const changes: Change[] = [];
+  const moved: { a: Word; b: Word; d: [number, number] }[] = [];
   let del: Word[] = [], ins: Word[] = [];
   const flush = () => {
     if (!del.length && !ins.length) return;
@@ -66,8 +78,7 @@ export function diffWords(wa: Word[], wb: Word[], pair: number, offset: [number,
       let best = -1, bestD = Infinity;
       ci.forEach((h, j) => {
         if (usedI.has(j)) return;
-        const hb0 = unionBox(h.map(w => w.bbox)) as BBox;
-        const hb: BBox = [hb0[0] - ox, hb0[1] - oy, hb0[2] - ox, hb0[3] - oy];
+        const hb = shiftBox(unionBox(h.map(w => w.bbox)) as BBox, -ox, -oy);
         const dd = Math.hypot(cx(hb) - cx(bb), cy(hb) - cy(bb));
         if (boxesNear(bb, hb, 20) && dd < bestD) { best = j; bestD = dd; }
       });
@@ -89,12 +100,47 @@ export function diffWords(wa: Word[], wb: Word[], pair: number, offset: [number,
     del = []; ins = [];
   };
   for (const o of ops) {
-    if (o.type === 'equal' || same.has(o)) flush();
-    else if (o.type === 'delete') del.push(A[o.aIndex]);
-    else ins.push(B[o.bIndex]);
+    if (o.type === 'equal') {
+      flush();
+      const a = freeA[o.aIndex], b = freeB[o.bIndex];
+      moved.push({ a, b, d: [cx(b.bbox) - ox - cx(a.bbox), cy(b.bbox) - oy - cy(a.bbox)] });
+    } else if (o.type === 'delete') del.push(freeA[o.aIndex]);
+    else ins.push(freeB[o.bIndex]);
   }
   flush();
-  return mergeNearby(changes);
+  const merged = mergeNearby(changes);
+  return [...pairMovedClusters(merged, ox, oy), ...groupMoves(moved, pair, ox, oy)];
+}
+
+function movedChange(pair: number, text: string, bboxA: BBox, bboxB: BBox, ox: number, oy: number): Change {
+  return { id: newId('t'), kind: 'text', op: 'moved', pair, bboxA, bboxB, before: text, after: text, gridRef: null,
+    move: [round1(bboxB[0] - ox - bboxA[0]), round1(bboxB[1] - oy - bboxA[1])] };
+}
+const round1 = (v: number) => Math.round(v * 10) / 10;
+
+/** Words that moved by a common displacement and sit together become one "Text moved" change. */
+function groupMoves(ms: { a: Word; b: Word; d: [number, number] }[], pair: number, ox: number, oy: number): Change[] {
+  const groups: (typeof ms)[] = [];
+  for (const m of ms) {
+    const h = Math.max(2, m.a.bbox[3] - m.a.bbox[1]);
+    const g = groups.find(gr => gr.some(x => Math.hypot(x.d[0] - m.d[0], x.d[1] - m.d[1]) <= 2 && boxesNear(x.a.bbox, m.a.bbox, 1.5 * h)));
+    if (g) g.push(m); else groups.push([m]);
+  }
+  return groups.map(g => movedChange(pair, g.map(m => m.a.text).join(' '), unionBox(g.map(m => m.a.bbox))!, unionBox(g.map(m => m.b.bbox))!, ox, oy));
+}
+
+/** A removed and an added change with identical text are a move. */
+function pairMovedClusters(cs: Change[], ox: number, oy: number): Change[] {
+  const out: Change[] = [];
+  const used = new Set<Change>();
+  for (const r of cs) {
+    if (r.op !== 'removed' || used.has(r)) continue;
+    const a = cs.find(x => x.op === 'added' && !used.has(x) && x.after === r.before);
+    if (!a) continue;
+    used.add(r); used.add(a);
+    out.push(movedChange(r.pair, r.before!, r.bboxA!, a.bboxB!, ox, oy));
+  }
+  return [...cs.filter(c => !used.has(c)), ...out];
 }
 
 /** Two boxes side by side on one row (vertical overlap ≥ half the smaller height, small horizontal gap). */
@@ -122,7 +168,7 @@ function mergeOnce(changes: Change[], pad: number): Change[] {
   for (const c of changes) {
     let row = false;
     const o = out.find(x => {
-      if (x.kind !== c.kind || x.op !== c.op || x.op === 'modified') return false;
+      if (x.kind !== c.kind || x.op !== c.op || (x.op !== 'added' && x.op !== 'removed')) return false;
       if (boxesNear(box(x), box(c), pad)) { row = false; return true; }
       if (x.kind === 'text' && sameRow(box(x), box(c))) { row = true; return true; }
       return false;
@@ -140,4 +186,4 @@ function mergeOnce(changes: Change[], pad: number): Change[] {
   return out;
 }
 
-export function opLabel(op: ChangeOp) { return op === 'added' ? 'Added' : op === 'removed' ? 'Removed' : 'Modified'; }
+export function opLabel(op: ChangeOp) { return ({ added: 'Added', removed: 'Removed', modified: 'Modified', moved: 'Moved', resized: 'Resized' } as const)[op]; }

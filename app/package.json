@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "screenshots": "playwright test e2e/screenshots.spec.ts"
+    "screenshots": "playwright test e2e/screenshots.spec.ts",
+    "fixtures": "node e2e/fixtures/make-fixtures.mjs"
   },
   "dependencies": {
     "pdfjs-dist": "^5.6.205",

@@ -8,16 +8,24 @@ interface Props {
   filter: Filter; setFilter: (f: Filter) => void; onJump: (c: Change) => void; onExport: () => void;
 }
 
-const opWord = { added: 'added', removed: 'removed', modified: 'modified' } as const;
+const opWord = { added: 'added', removed: 'removed', modified: 'modified', moved: 'moved', resized: 'resized' } as const;
 const q = (s?: string, n = 40) => (s === undefined ? '' : `"${s.length > n ? s.slice(0, n - 1) + '…' : s}"`);
 
-function title(c: { kind: string; op: keyof typeof opWord }) {
-  const k = c.kind === 'text' ? 'Text' : c.kind === 'graphics' ? 'Graphics' : 'Page';
+function title(c: { kind: string; op: keyof typeof opWord; shape?: string }) {
+  const k = c.kind === 'text' ? 'Text' : c.kind === 'graphics' ? (c.shape ?? 'Graphics') : 'Page';
   return `${k} ${opWord[c.op]}`;
 }
+const sg = (v: number) => (v >= 0 ? '+' : '') + v.toFixed(1);
 function detail(c: Change | FoldedChange) {
+  const ch = c as Change;
+  if (c.op === 'moved' && ch.move) return `${c.kind === 'text' ? q(c.before, 16) + ' · ' : ''}dx ${sg(ch.move[0])} dy ${sg(ch.move[1])} pt`;
+  if (c.op === 'resized' && ch.sizeA && ch.sizeB) {
+    const r = (v: number) => Math.round(v);
+    return `${r(ch.sizeA[0])}×${r(ch.sizeA[1])} → ${r(ch.sizeB[0])}×${r(ch.sizeB[1])}${ch.scale ? ` · ×${ch.scale[0].toFixed(2)} ×${ch.scale[1].toFixed(2)}` : ''}`;
+  }
+  if (c.kind === 'graphics' && ch.shape) { const b = (ch.bboxB ?? ch.bboxA)!; return `${Math.round(b[2] - b[0])}×${Math.round(b[3] - b[1])} pt${ch.detail ? ' · ' + ch.detail : ''}`; }
   if ('kind' in c && c.kind === 'graphics') {
-    const ch = c as Change; const b = (ch.bboxB ?? ch.bboxA)!;
+    const b = (ch.bboxB ?? ch.bboxA)!;
     return `Region ${Math.round(((b[2] - b[0]) / 72) * 25.4)}×${Math.round(((b[3] - b[1]) / 72) * 25.4)} mm · ${ch.pixels ?? 0} px`;
   }
   if (c.kind === 'page') return c.op === 'added' ? 'Inserted in Rev B' : 'Deleted from Rev A';
@@ -30,7 +38,7 @@ const KindIcon = ({ kind }: { kind: string }) => (
 );
 
 export default function Sidebar({ result, changes, pair, selected, filter, setFilter, onJump, onExport }: Props) {
-  const cnt = { added: 0, removed: 0, modified: 0 };
+  const cnt = { added: 0, removed: 0, modified: 0, moved: 0, resized: 0 };
   changes.forEach(c => cnt[c.op]++);
   const pass = (k: string) => filter === 'all' || k === filter || k === 'page';
   const rows = changes.filter(c => !c.foldKey);
@@ -47,6 +55,7 @@ export default function Sidebar({ result, changes, pair, selected, filter, setFi
           <div className="st add"><b data-testid="count-added">{cnt.added}</b><span>Added</span></div>
           <div className="st rem"><b data-testid="count-removed">{cnt.removed}</b><span>Removed</span></div>
           <div className="st mod"><b data-testid="count-modified">{cnt.modified}</b><span>Modified</span></div>
+          <div className="st mov"><b data-testid="count-moved">{cnt.moved + cnt.resized}</b><span title="Moved or resized">Moved</span></div>
         </div>
       </div>
       <div className="filters">
@@ -87,9 +96,10 @@ export default function Sidebar({ result, changes, pair, selected, filter, setFi
         ))}
       </div>
       <div className="legend">
-        <span><i className="sw" style={{ borderColor: '#e5484d', background: 'rgba(229,72,77,.2)' }} />Removed (A)</span>
-        <span><i className="sw" style={{ borderColor: '#30a46c', background: 'rgba(48,164,108,.2)' }} />Added (B)</span>
+        <span><i className="sw" style={{ borderColor: '#e5484d', background: 'rgba(229,72,77,.2)' }} />Removed</span>
+        <span><i className="sw" style={{ borderColor: '#30a46c', background: 'rgba(48,164,108,.2)' }} />Added</span>
         <span><i className="sw" style={{ borderColor: '#f5a524', background: 'rgba(245,165,36,.25)' }} />Modified</span>
+        <span><i className="sw" style={{ borderColor: '#8e7cf0', background: 'rgba(110,86,207,.22)' }} />Moved</span>
         <span><i className="sw dashed" />Graphics</span>
       </div>
     </div>

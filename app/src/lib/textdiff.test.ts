@@ -83,3 +83,33 @@ describe('diffWords with a page offset', () => {
     expect(cs[0]).toMatchObject({ op: 'modified', before: 'OLD', after: 'NEW' });
   });
 });
+
+describe('text moves', () => {
+  it('reports a moved word as "moved" with its displacement', () => {
+    const a = [...line('TITLE', 50, 50), ...line('Hello', 100, 106)];
+    const b = [...line('TITLE', 50, 50), ...line('Hello', 220, 146)];
+    const cs = diffWords(a, b, 0);
+    expect(cs).toHaveLength(1);
+    expect(cs[0]).toMatchObject({ kind: 'text', op: 'moved', before: 'Hello', after: 'Hello', move: [120, 40] });
+  });
+  it('ignores sub-tolerance jitter and compensates the page offset', () => {
+    const a = line('Hello World', 100, 100);
+    expect(diffWords(a, a.map(w => ({ ...w, bbox: [w.bbox[0] + 0.6, w.bbox[1], w.bbox[2] + 0.6, w.bbox[3]] as [number, number, number, number] })), 0)).toEqual([]);
+    expect(diffWords(a, line('Hello World', 130, 110), 0, [30, 10])).toEqual([]);
+  });
+  it('groups words moved together into one change', () => {
+    const a = [...line('NOTE 1: PAINT WHITE', 50, 400), ...line('FIXED', 50, 50)];
+    const b = [...line('NOTE 1: PAINT WHITE', 300, 600), ...line('FIXED', 50, 50)];
+    const cs = diffWords(a, b, 0);
+    expect(cs).toHaveLength(1);
+    expect(cs[0]).toMatchObject({ op: 'moved', before: 'NOTE 1: PAINT WHITE', move: [250, 200] });
+  });
+  it('pairs a removed and an added block with the same text across reading order', () => {
+    // the block jumps from the top to the bottom, past other text, so Myers sees delete + insert
+    const a = [...line('MOVING BLOCK', 50, 50), ...line('ALPHA BETA GAMMA', 50, 300)];
+    const b = [...line('ALPHA BETA GAMMA', 50, 300), ...line('MOVING BLOCK', 50, 600)];
+    const cs = diffWords(a, b, 0);
+    expect(cs.map(c => c.op)).toEqual(['moved']);
+    expect(cs[0].move).toEqual([0, 550]);
+  });
+});

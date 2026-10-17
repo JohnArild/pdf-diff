@@ -2,7 +2,7 @@ import type { Change, FoldedChange } from './types';
 
 /** Key under which identical changes on different sheets are considered "the same change". */
 export function foldKey(c: Change): string {
-  if (c.kind === 'text') return `text|${c.op}|${c.before ?? ''}|${c.after ?? ''}`;
+  if (c.kind === 'text') return `text|${c.op}|${c.before ?? ''}|${c.after ?? ''}${c.move ? `|${c.move.map(v => Math.round(v)).join(',')}` : ''}`;
   const b = (c.bboxB ?? c.bboxA)!;
   return `graphics|${c.op}|${b.map(v => Math.round(v / 5)).join(',')}`;
 }

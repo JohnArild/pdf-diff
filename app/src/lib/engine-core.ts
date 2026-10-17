@@ -1,4 +1,7 @@
 /** Pure, worker-safe parts of the comparison pipeline. */
+import type { VecChange } from './vecdiff';
+import { shapeName } from './vector';
+import { boxesNear, unionBox } from './words';
 import type { BBox, Change, DiffResult, DocData, PairResult } from './types';
 import { sheetInfo, pairPages } from './pairing';
 import { diffWords, estimateOffset, newId } from './textdiff';
@@ -47,6 +50,58 @@ export function graphicsChanges(regs: RasterRegion[], text: Change[], pair: numb
     const op = r.darkA > 3 * r.darkB ? 'removed' : r.darkB > 3 * r.darkA ? 'added' : 'modified';
     const bA: BBox = r.bbox, bB: BBox = [r.bbox[0] + offset[0], r.bbox[1] + offset[1], r.bbox[2] + offset[0], r.bbox[3] + offset[1]];
     out.push({ id: newId('g'), kind: 'graphics', op, pair, bboxA: op === 'added' ? null : bA, bboxB: op === 'removed' ? null : bB, gridRef: null, pixels: r.pixels });
+  }
+  // fallback pairing: a removed and an added region that overlap are one modification
+  const used = new Set<Change>();
+  for (const rem of out) {
+    if (rem.op !== 'removed' || used.has(rem)) continue;
+    const add = out.find(x => x.op === 'added' && !used.has(x) && boxesNear(rem.bboxA!, [x.bboxB![0] - offset[0], x.bboxB![1] - offset[1], x.bboxB![2] - offset[0], x.bboxB![3] - offset[1]], 0));
+    if (!add) continue;
+    used.add(add); rem.op = 'modified'; rem.bboxB = add.bboxB; rem.pixels = (rem.pixels ?? 0) + (add.pixels ?? 0);
+  }
+  return out.filter(c => !used.has(c));
+}
+
+/** Vector changes confirmed by the pixel diff -> Change objects; shapes moved together form one change. */
+export function vectorChanges(vec0: VecChange[], pair: number, offset: [number, number]): Change[] {
+  const r1 = (v: number) => Math.round(v * 10) / 10;
+  const out: Change[] = [];
+  let vec = vec0;
+  const movedGroups: { d: [number, number]; cs: VecChange[] }[] = [];
+  for (const v of vec) {
+    if (v.op !== 'moved') continue;
+    const d: [number, number] = [v.b.bbox[0] - offset[0] - v.a.bbox[0], v.b.bbox[1] - offset[1] - v.a.bbox[1]];
+    const g = movedGroups.find(m => Math.hypot(m.d[0] - d[0], m.d[1] - d[1]) <= 1 && m.cs.some(c => boxesNear(c.a.bbox, v.a.bbox, 6)));
+    if (g) g.cs.push(v); else movedGroups.push({ d, cs: [v] });
+  }
+  for (const g of movedGroups) {
+    const one = g.cs.length === 1 ? g.cs[0] : null;
+    out.push({ id: newId('v'), kind: 'graphics', op: 'moved', pair, bboxA: unionBox(g.cs.map(c => c.a.bbox)), bboxB: unionBox(g.cs.map(c => c.b.bbox)),
+      gridRef: null, move: [r1(g.d[0]), r1(g.d[1])], shape: one ? shapeName(one.a) : `Group of ${g.cs.length} shapes` });
+  }
+  // shapes resized together (touching on both sides, e.g. a table border and its column lines growing for a new row)
+  const resGroups: VecChange[][] = [];
+  for (const v of vec) {
+    if (v.op !== 'resized') continue;
+    const g = resGroups.find(gr => gr.some(c => boxesNear(c.a.bbox, v.a.bbox, 2) && boxesNear(c.b.bbox, v.b.bbox, 2)));
+    if (g) g.push(v); else resGroups.push([v]);
+  }
+  for (const g of resGroups.filter(gr => gr.length > 1)) {
+    const a = unionBox(g.map(c => c.a.bbox))!, b = unionBox(g.map(c => c.b.bbox))!;
+    const ua = { ...g[0].a, bbox: a }, ub = { ...g[0].b, bbox: b };
+    vec = vec.filter(v => !g.includes(v));
+    vec.push({ op: 'resized', a: ua, b: ub, detail: `group of ${g.length} shapes` });
+  }
+  for (const v of vec) {
+    if (v.op === 'moved') continue;
+    const wa = v.a.bbox[2] - v.a.bbox[0], ha = v.a.bbox[3] - v.a.bbox[1], wb = v.b.bbox[2] - v.b.bbox[0], hb = v.b.bbox[3] - v.b.bbox[1];
+    const c: Change = { id: newId('v'), kind: 'graphics', op: v.op, pair, bboxA: v.a.bbox, bboxB: v.b.bbox, gridRef: null, shape: v.detail?.startsWith("group of") ? v.detail.slice(9) : shapeName(v.a) };
+    if (v.op === 'resized') {
+      c.sizeA = [r1(wa), r1(ha)]; c.sizeB = [r1(wb), r1(hb)];
+      c.scale = [wa > 0.01 ? Math.round((wb / wa) * 100) / 100 : 0, ha > 0.01 ? Math.round((hb / ha) * 100) / 100 : 0];
+      c.move = [r1(v.b.bbox[0] - offset[0] - v.a.bbox[0]), r1(v.b.bbox[1] - offset[1] - v.a.bbox[1])];
+    } else c.detail = v.detail;
+    out.push(c);
   }
   return out;
 }

@@ -30,15 +30,24 @@ End-to-end tests and screenshots use Playwright. They need the OpenHornet sample
 cd app
 npm run test:e2e            # OpenHornet rev - -> rev A expectations + self-vs-self = 0 changes; also writes the screenshots
 npm run screenshots         # only regenerate docs/screenshots/*.png
+npm run fixtures            # regenerate the synthetic PDF pairs in app/e2e/fixtures/ (moved text, resized/moved/recoloured boxes)
 ```
+
+The synthetic fixtures (our own, committed) run without the OpenHornet samples; see [`app/e2e/fixtures/README.md`](app/e2e/fixtures/README.md).
 
 What the app does today:
 
 - **Pairing** by title-block sheet number (`n/m` next to `SHEET`, or `n OF m`), else by page order. Pages without a partner are listed as inserted or deleted.
-- **Text diff:** PDF.js positioned words, then a word-level Myers diff in reading order (in a Web Worker). Replacements in place become *modified* with a character-level refinement. Edit runs are split spatially, and cells of one table row are merged. Words that only moved in reading order are ignored. A page offset is estimated from words that are unique on both pages.
-- **Graphics diff (MVP):** each pair is rendered at 150 DPI (long side capped at 4200 px). B is shifted by the offset candidate that leaves the fewest differing pixels. A tolerant 3×3 pixel comparison runs in a Web Worker, text-change areas are masked out, and the rest is clustered into regions. The vector diff from the prototype comes in phase 2.
+- **Text diff:** PDF.js positioned words. A word with the same text at the same place on both pages (±1 pt after page alignment) is unchanged. The remaining words get a word-level Myers diff in reading order (in a Web Worker). Words that match there but sit elsewhere become **Moved** (grouped by common displacement), and so do removed + added blocks with identical text. Replacements in place become *modified*, with a character-level refinement. Edit runs are split spatially, and cells of one table row are merged. A page offset is estimated from words that are unique on both pages.
+- **Vector layer:** painted paths are read from each page's PDF.js operator list (`constructPath` with CTM, form XObject matrices and fill/stroke colour and width). `re` boxes and m/l/h boxes are both recognised as boxes. Identical shapes cancel. Remaining removed + added shapes are paired:
+  - same geometry in another style → **Modified** (e.g. `fill #000000 -> #e61a1a`)
+  - same style and size elsewhere → **Moved** (dx, dy)
+  - same style and type with another size, overlapping or nearby → **Resized** (old and new size, scale factors); shapes resized together, such as a table outline and its column lines, are grouped
+  Each vector change must be confirmed by differing pixels outside the part the old and new shape share. This keeps re-exported, re-tessellated paths that render the same from being reported.
+- **Graphics diff (raster fallback):** each pair is rendered at 150 DPI (long side capped at 4200 px). B is shifted by the offset candidate that leaves the fewest differing pixels. A tolerant 3×3 pixel comparison runs in a Web Worker. **All** text boxes (old and new) and confirmed vector changes are masked out, and the rest is clustered into regions. These cover added/removed shapes, images and shadings. Overlapping removed + added regions are paired as *modified*. Sampled-geometry vector matching (prototype) comes in phase 2.
+- Displacements are in points with the page's top-left origin: **+dx = right, +dy = down**.
 - **Folding:** a change repeated identically on ≥ half of the paired sheets (e.g. the title-block REV letter) is listed once.
-- **UI:** synced zoom (wheel, around the cursor) and pan (drag) in both panes. Click a change to jump and zoom to it. Filters are All / Text / Graphics. Export shows a preview, **Copy** and **Download .txt** (PLAN.md §6 format). The grid column shows `-` until grid detection lands (phase 2); the data model already has a `gridRef` slot.
+- **UI:** synced zoom (wheel, around the cursor) and pan (drag) in both panes. Click a change to jump and zoom to it. Filters are All / Text / Graphics. Moved and resized items are violet; on Rev B a dashed ghost and an arrow show the old position. Export shows a preview, **Copy** and **Download .txt** (PLAN.md §6 format). The grid column shows `-` until grid detection lands (phase 2); the data model already has a `gridRef` slot.
 
 ![Sheet 22, added note and leader line](docs/screenshots/02-sheet22-note.png)
 
