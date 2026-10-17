@@ -57,59 +57,109 @@ export function diffWords(wa: Word[], wb: Word[], pair: number, offset: [number,
   const bByText = new Map<string, number[]>();
   B.forEach((w, j) => bByText.set(w.text, [...(bByText.get(w.text) ?? []), j]));
   const freeA: Word[] = [];
+  const anchorOf = new Map<Word, Word>(); // anchored A word -> its B partner
   for (const w of A) {
     const j = (bByText.get(w.text) ?? []).find(k => !usedB.has(k) &&
       Math.abs(cx(B[k].bbox) - ox - cx(w.bbox)) <= MOVE_TOL && Math.abs(cy(B[k].bbox) - oy - cy(w.bbox)) <= MOVE_TOL);
-    if (j === undefined) freeA.push(w); else usedB.add(j);
+    if (j === undefined) freeA.push(w); else { usedB.add(j); anchorOf.set(w, B[j]); }
   }
   const freeB = B.filter((_, j) => !usedB.has(j));
   // 2. Myers over the rest
   const ops = myers(freeA.map(w => w.text), freeB.map(w => w.text));
+  // Equal pairs here are move candidates. A candidate whose neighbours on the same line were deleted (on A) or
+  // inserted (on B) was not moved: its text was re-typed into new context (e.g. a BOM description quoted in a new
+  // revision-history row). Reject those until stable.
+  const delA = new Set<Word>(), insB = new Set<Word>();
+  for (const o of ops) { if (o.type === 'delete') delA.add(freeA[o.aIndex]); else if (o.type === 'insert') insB.add(freeB[o.bIndex]); }
+  const cand = ops.filter(o => o.type === 'equal');
+  const rejected = new Set<typeof ops[number]>();
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const o of cand) {
+      if (rejected.has(o)) continue;
+      const a = freeA[o.aIndex], b = freeB[o.bIndex];
+      if ([...delA].some(w => lineNeighbour(w.bbox, a.bbox)) || [...insB].some(w => lineNeighbour(w.bbox, b.bbox))) {
+        rejected.add(o); delA.add(a); insB.add(b); changed = true;
+      }
+    }
+  }
   const changes: Change[] = [];
   const moved: { a: Word; b: Word; d: [number, number] }[] = [];
+  const words = new Map<Change, { a: Word[]; b: Word[] }>();
   let del: Word[] = [], ins: Word[] = [];
   const flush = () => {
     if (!del.length && !ins.length) return;
-    const cd = clusters(del, 12), ci = clusters(ins, 12);
-    const usedI = new Set<number>();
-    for (const g of cd) {
-      const bb = unionBox(g.map(w => w.bbox)) as BBox;
-      // pair with an insertion cluster at (nearly) the same place -> modified
-      let best = -1, bestD = Infinity;
-      ci.forEach((h, j) => {
-        if (usedI.has(j)) return;
-        const hb = shiftBox(unionBox(h.map(w => w.bbox)) as BBox, -ox, -oy);
-        const dd = Math.hypot(cx(hb) - cx(bb), cy(hb) - cy(bb));
-        if (boxesNear(bb, hb, 20) && dd < bestD) { best = j; bestD = dd; }
-      });
-      if (best >= 0) {
-        usedI.add(best);
-        const h = ci[best];
-        const before = join(g), after = join(h);
-        const r = charRefine(before, after);
-        changes.push({ id: newId('t'), kind: 'text', op: 'modified', pair, bboxA: bb, bboxB: unionBox(h.map(w => w.bbox)),
-          before, after, gridRef: null, ...(r.common > 0 && before.length > 8 ? { detail: `${r.before || '∅'} → ${r.after || '∅'}` } : {}) });
-      } else {
-        changes.push({ id: newId('t'), kind: 'text', op: 'removed', pair, bboxA: bb, bboxB: null, before: join(g), gridRef: null });
-      }
+    for (const g of clusters(del, 12)) {
+      const c: Change = { id: newId('t'), kind: 'text', op: 'removed', pair, bboxA: unionBox(g.map(w => w.bbox)), bboxB: null, before: join(g), gridRef: null };
+      changes.push(c); words.set(c, { a: g, b: [] });
     }
-    ci.forEach((h, j) => {
-      if (usedI.has(j)) return;
-      changes.push({ id: newId('t'), kind: 'text', op: 'added', pair, bboxA: null, bboxB: unionBox(h.map(w => w.bbox)), after: join(h), gridRef: null });
-    });
+    for (const h of clusters(ins, 12)) {
+      const c: Change = { id: newId('t'), kind: 'text', op: 'added', pair, bboxA: null, bboxB: unionBox(h.map(w => w.bbox)), after: join(h), gridRef: null };
+      changes.push(c); words.set(c, { a: [], b: h });
+    }
     del = []; ins = [];
   };
   for (const o of ops) {
-    if (o.type === 'equal') {
+    if (o.type === 'equal' && !rejected.has(o)) {
       flush();
       const a = freeA[o.aIndex], b = freeB[o.bIndex];
       moved.push({ a, b, d: [cx(b.bbox) - ox - cx(a.bbox), cy(b.bbox) - oy - cy(a.bbox)] });
-    } else if (o.type === 'delete') del.push(freeA[o.aIndex]);
+    } else if (o.type === 'equal') { del.push(freeA[o.aIndex]); ins.push(freeB[o.bIndex]); }
+    else if (o.type === 'delete') del.push(freeA[o.aIndex]);
     else ins.push(freeB[o.bIndex]);
   }
   flush();
-  const merged = mergeNearby(changes);
-  return [...pairMovedClusters(merged, ox, oy), ...groupMoves(moved, pair, ox, oy)];
+  // 3. removed + added: same text -> moved; same place (any run) -> modified; then merge table-row cells
+  const paired = pairModified(pairMovedClusters(changes, ox, oy), words, anchorOf, ox, oy);
+  const merged = mergeNearby(paired);
+  return [...merged, ...groupMoves(moved, pair, ox, oy)];
+}
+
+/** Same text line (vertical overlap ≥ half the smaller height) and a horizontal gap of at most one line height. */
+function lineNeighbour(p: BBox, q: BBox): boolean {
+  const h = Math.min(p[3] - p[1], q[3] - q[1]);
+  const vo = Math.min(p[3], q[3]) - Math.max(p[1], q[1]);
+  const gap = Math.max(p[0], q[0]) - Math.min(p[2], q[2]);
+  return vo >= 0.5 * h && gap <= Math.max(2, h);
+}
+
+/**
+ * Pair a removed and an added change at (nearly) the same place into "modified", across Myers runs (a part number
+ * replaced in a table cell). Unchanged words that share the cell (same line, adjacent) are pulled in for context,
+ * so "HID BUS MASTER" -> "BUS MASTER" reads "ASSY, ABSIS HID BUS MASTER" -> "ASSY, ABSIS BUS MASTER".
+ */
+function pairModified(cs: Change[], words: Map<Change, { a: Word[]; b: Word[] }>, anchorOf: Map<Word, Word>, ox: number, oy: number): Change[] {
+  const rem = cs.filter(c => c.op === 'removed'), add = cs.filter(c => c.op === 'added');
+  const cands: { r: Change; a: Change; d: number }[] = [];
+  for (const r of rem) for (const a of add) {
+    const ra = r.bboxA!, ab0 = a.bboxB!, ab: BBox = [ab0[0] - ox, ab0[1] - oy, ab0[2] - ox, ab0[3] - oy];
+    const h = Math.min(ra[3] - ra[1], ab[3] - ab[1]);
+    const vo = Math.min(ra[3], ab[3]) - Math.max(ra[1], ab[1]);
+    if (vo < 0.5 * h || !boxesNear(ra, ab, Math.max(6, h))) continue; // same line, touching or close
+    cands.push({ r, a, d: Math.hypot(cx(ab) - cx(ra), cy(ab) - cy(ra)) });
+  }
+  const used = new Set<Change>(), out: Change[] = [];
+  const anchored = [...anchorOf.keys()];
+  for (const { r, a } of cands.sort((p, q) => p.d - q.d)) {
+    if (used.has(r) || used.has(a)) continue;
+    used.add(r); used.add(a);
+    const wa = [...(words.get(r)?.a ?? [])], wb = [...(words.get(a)?.b ?? [])];
+    // context: anchored neighbours on the same line, on both sides
+    for (let grew = true; grew && wa.length;) {
+      grew = false;
+      for (const w of anchored) {
+        if (wa.includes(w)) continue;
+        const box = unionBox(wa.map(x => x.bbox))!;
+        if (lineNeighbour(w.bbox, box)) { wa.push(w); wb.push(anchorOf.get(w)!); grew = true; }
+      }
+    }
+    const byX = (ws: Word[]) => [...ws].sort((p, q) => p.bbox[0] - q.bbox[0]);
+    const before = wa.length > (words.get(r)?.a.length ?? 0) ? join(byX(wa)) : r.before!, after = wa.length > (words.get(r)?.a.length ?? 0) ? join(byX(wb)) : a.after!;
+    const rr = charRefine(before, after);
+    out.push({ id: newId('t'), kind: 'text', op: 'modified', pair: r.pair, bboxA: unionBox(wa.map(x => x.bbox)) ?? r.bboxA, bboxB: unionBox(wb.map(x => x.bbox)) ?? a.bboxB,
+      before, after, gridRef: null, ...(rr.common > 0 && before.length > 8 ? { detail: `${rr.before || '∅'} → ${rr.after || '∅'}` } : {}) });
+  }
+  return [...cs.filter(c => !used.has(c)), ...out];
 }
 
 function movedChange(pair: number, text: string, bboxA: BBox, bboxB: BBox, ox: number, oy: number): Change {

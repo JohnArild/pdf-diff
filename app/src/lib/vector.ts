@@ -10,6 +10,16 @@ export interface Shape {
   stroke: string | null;
   lw: number; // stroke width in page points
   n: number; // number of path points (0 when unknown)
+  /** shape signature: the first up to 32 points normalised to the box (0..1), for matching moved/resized copies */
+  sig?: number[];
+}
+
+/** Do two signatures describe the same outline (within `eps` of the normalised box)? */
+export function sigClose(a: Shape, b: Shape, eps: number): boolean {
+  if (!a.sig || !b.sig) return a.type === b.type && a.type !== 'path'; // rects and lines are fully described by their box
+  if (a.sig.length !== b.sig.length) return false;
+  for (let i = 0; i < a.sig.length; i++) if (Math.abs(a.sig[i] - b.sig[i]) > eps) return false;
+  return true;
 }
 
 type M = [number, number, number, number, number, number];
@@ -103,7 +113,10 @@ export function extractShapes(fnArray: ArrayLike<number>, argsArray: ArrayLike<u
         if (!xs.length) break;
         const bbox: BBox = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
         const scaleLw = lw * Math.sqrt(Math.abs(ctm[0] * ctm[3] - ctm[1] * ctm[2]));
-        out.push({ bbox, type: classify(xs, ys, subpaths, data !== undefined && data !== null && typeof data === 'object' && 'length' in (data as object)), paint,
+        const bw = Math.max(bbox[2] - bbox[0], 1e-6), bh = Math.max(bbox[3] - bbox[1], 1e-6);
+        const sig: number[] = [];
+        for (let k = 0; k < Math.min(xs.length, 32); k++) sig.push(Math.round(((xs[k] - bbox[0]) / bw) * 1000) / 1000, Math.round(((ys[k] - bbox[1]) / bh) * 1000) / 1000);
+        out.push({ sig, bbox, type: classify(xs, ys, subpaths, data !== undefined && data !== null && typeof data === 'object' && 'length' in (data as object)), paint,
           fill: paint === 'stroke' ? null : fill, stroke: paint === 'fill' ? null : stroke, lw: paint === 'fill' ? 0 : Math.round(scaleLw * 100) / 100, n: xs.length });
         break;
       }

@@ -1,5 +1,6 @@
 import type { Change, DiffResult, PagePair, SheetInfo } from './types';
 import { opLabel } from './textdiff';
+import { gridSortKey, gridSummary } from './grid';
 
 export interface ReportMeta {
   nameA: string; nameB: string; pagesA: number; pagesB: number;
@@ -9,6 +10,15 @@ export interface ReportMeta {
 
 const pad = (s: string, n: number) => (s.length >= n ? s + ' ' : s + ' '.repeat(n - s.length));
 const clip = (s: string, n: number) => (s.length <= n ? s : s.slice(0, n - 3) + '...');
+
+/** When before + after exceed `room`, drop their shared leading words ("...HID BUS MASTER" -> "...BUS MASTER"). */
+export function elideCommon(b: string, a: string, room: number): [string, string] {
+  if (a.length + b.length <= room) return [b, a];
+  const wb = b.split(' '), wa = a.split(' ');
+  let k = 0;
+  while (k < wb.length - 1 && k < wa.length - 1 && wb[k] === wa[k]) k++;
+  return k > 0 ? ['...' + wb.slice(k).join(' '), '...' + wa.slice(k).join(' ')] : [b, a];
+}
 
 /** Short description of a change; `max` is the column budget for the whole description (default fits an 80-column row). */
 export function describe(c: Change, max = 49): string {
@@ -32,7 +42,8 @@ export function describe(c: Change, max = 49): string {
     return `Graphics (${mm(b[2] - b[0])}x${mm(b[3] - b[1])} mm region)`;
   }
   if (c.op === 'modified') {
-    const room = Math.max(8, max - 13), b = c.before ?? '', a = c.after ?? '';
+    const room = Math.max(8, max - 13);
+    const [b, a] = elideCommon(c.before ?? '', c.after ?? '', room);
     // give the shorter side what it needs, split the rest
     const nb = Math.min(b.length, Math.max(Math.floor(room / 2), room - a.length));
     return `Text "${clip(b, Math.max(4, nb))}" -> "${clip(a, Math.max(4, room - Math.min(b.length, nb)))}"`;
@@ -67,12 +78,11 @@ export function formatReport(r: DiffResult, m: ReportMeta): string {
   const tz = m.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const offs = r.perPair.filter(p => p.offset[0] !== 0 || p.offset[1] !== 0);
   const sgn = (v: number) => (v >= 0 ? '+' : '') + v.toFixed(1);
-  const gridded = all.some(c => c.gridRef);
   L.push('PDF DIFF REPORT', '='.repeat(W));
   L.push(`Rev A      ${pad(m.nameA, 30)}Rev ${pad(m.revA ?? '?', 4)}${m.pagesA} pages`);
   L.push(`Rev B      ${pad(m.nameB, 30)}Rev ${pad(m.revB ?? '?', 4)}${m.pagesB} pages`);
   L.push(`Generated  ${fmtDate(m.generated, tz)} (${tz})`);
-  L.push(`Grid       ${gridded ? 'detected' : 'not detected (grid references arrive in phase 2)'}`);
+  L.push(`Grid       ${gridSummary(r.perPair.map(p => p.grid), r.pairs.length)}`);
   L.push(`Alignment  ${offs.length ? offs.map(p => `${sheetLabel(r.pairs[p.pair], r.sheetsA, r.sheetsB)}: B offset dx=${sgn(p.offset[0])} dy=${sgn(p.offset[1])} pt (compensated)`).join(', ') : 'no page offset detected'}`);
   L.push(`Totals     ${all.length} change${all.length === 1 ? '' : 's'}: ${cnt.added} added, ${cnt.removed} removed, ${cnt.modified} modified${extra}`);
   L.push('='.repeat(W), '');
@@ -89,7 +99,10 @@ export function formatReport(r: DiffResult, m: ReportMeta): string {
   const quiet: string[] = [];
   r.pairs.forEach((p, i) => {
     const pr = r.perPair[i];
-    const cs = (pr?.changes ?? []).filter(c => !c.foldKey).sort((x, y) => (x.gridRef ?? '').localeCompare(y.gridRef ?? '') || sortKey(x) - sortKey(y));
+    const cs = (pr?.changes ?? []).filter(c => !c.foldKey).sort((x, y) => {
+      const [ra, ca] = gridSortKey(x.gridRef), [rb, cb] = gridSortKey(y.gridRef);
+      return ra.localeCompare(rb) || ca - cb || sortKey(x) - sortKey(y);
+    });
     const label = sheetLabel(p, r.sheetsA, r.sheetsB);
     if (!cs.length) { quiet.push(label.replace(/^Sheet /, '')); return; }
     const dwg = (p.b !== null ? r.sheetsB[p.b]?.dwg : null) ?? (p.a !== null ? r.sheetsA[p.a]?.dwg : null);

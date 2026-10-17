@@ -14,8 +14,9 @@ test('OpenHornet OHC0003 rev - -> rev A', async ({ page }) => {
   const s1 = section(s.report, '1/26');
   // ... and the revision-history table outline + 3 column lines grow by one row: one grouped "Resized" change
   expect(s1[0]).toContain('- 2 changes');
-  expect(s1.some(l => /Resized\s+4 shapes 557x56 -> 557x88 pt/.test(l))).toBe(true);
-  expect(s1.some(l => /Added\s+Text "A FN 21: EXTENDED INDICA/.test(l))).toBe(true);
+  // grid refs from the sheet's border zones (D..A, 8..1): the revision block is in the top right corner
+  expect(s1.some(l => /D1–D3\s+Resized\s+4 shapes 557x56 -> 557x88 pt/.test(l))).toBe(true);
+  expect(s1.some(l => /D1–D2\s+Added\s+Text "A FN 21: EXTENDED INDICA/.test(l))).toBe(true);
   // sheet 22: added paint note
   const s22 = section(s.report, '22/26');
   expect(s22.some(l => /Added\s+Text "PAINT INSIDE OF/.test(l))).toBe(true);

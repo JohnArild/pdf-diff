@@ -25,6 +25,12 @@ describe('describe', () => {
     const t = r.perPair[2].changes.find(c => c.op === 'added')!;
     expect(describeChange(t)).toBe('Text "PAINT INSIDE OF RING FED-STD-595, FS378..."');
   });
+  it('drops shared leading words of a long modification so the difference stays visible', () => {
+    const c: Change = { id: 'm', kind: 'text', op: 'modified', pair: 0, bboxA: [0, 0, 1, 1], bboxB: [0, 0, 1, 1], gridRef: null,
+      before: 'ASSY, ABSIS HID BUS MASTER', after: 'ASSY, ABSIS BUS MASTER' };
+    expect(describeChange(c)).toBe('Text "...HID BUS MASTER" -> "...BUS MASTER"');
+    expect(describeChange({ ...c, before: 'ABSIS003', after: 'ABSIS011' })).toBe('Text "ABSIS003" -> "ABSIS011"');
+  });
 });
 
 describe('formatReport', () => {
@@ -36,7 +42,7 @@ describe('formatReport', () => {
     expect(txt).toContain('Rev A      old.pdf                       Rev -   3 pages');
     expect(txt).toContain('Generated  2026-10-17 12:05 (Europe/Oslo)');
     expect(txt).toContain('Totals     5 changes: 1 added, 1 removed, 3 modified');
-    expect(txt).toContain('Grid       not detected');
+    expect(txt).toContain('Grid       none detected');
   });
   it('lists folded changes once and the rest per sheet', () => {
     expect(txt).toContain('All sheets   -       Modified  Text "-" -> "A" (3/3 sheets)');

@@ -9,6 +9,9 @@ export const OLD = path.join(SAMPLES, 'OHC0003_rev-_v28.pdf');
 export const NEW = path.join(SAMPLES, 'OHC0003_revA_v29.pdf');
 export const SCREENSHOTS = path.resolve(here, '../../docs/screenshots');
 export const haveSamples = existsSync(OLD) && existsSync(NEW);
+export const LIP_OLD = path.join(SAMPLES, 'OH2A2A1-1_rev-_v6.pdf');
+export const LIP_NEW = path.join(SAMPLES, 'OH2A2A1-1_revA_v7.pdf');
+export const haveLip = existsSync(LIP_OLD) && existsSync(LIP_NEW);
 export const missingMsg = 'OpenHornet samples missing: run prototype/fetch_samples.sh first';
 
 export interface Snapshot { report: string; total: number; folded: { before?: string; after?: string; pairs: number[] }[] }

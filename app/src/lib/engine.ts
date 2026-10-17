@@ -4,6 +4,7 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import type { DiffResult, DocData, PageData } from './types';
 import { itemsToWords, type RawTextItem } from './words';
 import { finalize, graphicsChanges, vectorChanges, type TextStageResult } from './engine-core';
+import { detectGrid } from './grid';
 import { extractShapes, type OpsTable, type Shape } from './vector';
 import type { RasterJob, RasterResult } from '../workers/raster.worker';
 
@@ -90,8 +91,15 @@ export async function compare(A: LoadedDoc, B: LoadedDoc, onProgress: (done: num
       [a.data.buffer, ...bs.map(x => x.rgba.buffer)]);
     const pr = t.perPair[i];
     pr.offset = res.offset;
+    // refine the grid with border tick marks from the vector layer
+    const pb = B.data.pages[p.b], pa = A.data.pages[p.a];
+    pr.grid = detectGrid(pb.words, pb.width, pb.height, shapesB) ?? detectGrid(pa.words, pa.width, pa.height, shapesA) ?? pr.grid;
     pr.changes.push(...vectorChanges(res.vec, i, res.offset));
     pr.changes.push(...graphicsChanges(res.regions, pr.changes, i, res.offset));
+    // a style change of a shape inside a reported graphics region is part of that region
+    const regs = pr.changes.filter(c => c.kind === 'graphics' && c.pixels !== undefined);
+    pr.changes = pr.changes.filter(c => !(c.kind === 'graphics' && c.op === 'modified' && c.pixels === undefined && c.bboxB &&
+      regs.some(r => r !== c && r.bboxB && c.bboxB![0] >= r.bboxB[0] - 3 && c.bboxB![1] >= r.bboxB[1] - 3 && c.bboxB![2] <= r.bboxB[2] + 3 && c.bboxB![3] <= r.bboxB[3] + 3)));
   }
   rw.terminate();
   onProgress(total, total, 'Done');

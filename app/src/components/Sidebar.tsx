@@ -1,5 +1,5 @@
 import type { Change, DiffResult, FoldedChange } from '../lib/types';
-import { sheetLabel } from '../lib/report';
+import { elideCommon, sheetLabel } from '../lib/report';
 
 export type Filter = 'all' | 'text' | 'graphics';
 
@@ -29,7 +29,7 @@ function detail(c: Change | FoldedChange) {
     return `Region ${Math.round(((b[2] - b[0]) / 72) * 25.4)}×${Math.round(((b[3] - b[1]) / 72) * 25.4)} mm · ${ch.pixels ?? 0} px`;
   }
   if (c.kind === 'page') return c.op === 'added' ? 'Inserted in Rev B' : 'Deleted from Rev A';
-  if (c.op === 'modified') return `${q(c.before, 18)} → ${q(c.after, 18)}`;
+  if (c.op === 'modified') { const [b, a] = elideCommon(c.before ?? '', c.after ?? '', 36).map(t => t.replace(/^\.\.\./, '…')); return `${q(b, 18)} → ${q(a, 18)}`; }
   return q(c.op === 'added' ? c.after : c.before);
 }
 const KindIcon = ({ kind }: { kind: string }) => (

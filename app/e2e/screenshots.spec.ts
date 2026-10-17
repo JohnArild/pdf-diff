@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
-import { haveSamples, loadPair, missingMsg, NEW, OLD, SCREENSHOTS } from './helpers';
+import { haveLip, haveSamples, LIP_NEW, LIP_OLD, loadPair, missingMsg, NEW, OLD, SCREENSHOTS } from './helpers';
 
 const FIX = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 
@@ -48,4 +48,14 @@ test('fixture hello_box_bare: moved text and resized box', async ({ page }) => {
   await page.getByTestId('export-list').click();
   await expect(page.getByTestId('report')).toContainText('Resized');
   await shot(page, '08-hello-box-export.png');
+});
+
+test('OpenHornet OH2A2A1-1: sheet 1 with grid refs, export dialog', async ({ page }) => {
+  test.skip(!haveLip, missingMsg);
+  await loadPair(page, LIP_OLD, LIP_NEW);
+  await settle(page);
+  await shot(page, '09-lip-sheet1.png');
+  await page.getByTestId('export-list').click();
+  await expect(page.getByTestId('report')).toContainText('Border zone on 3/3 sheets');
+  await shot(page, '10-lip-export.png');
 });

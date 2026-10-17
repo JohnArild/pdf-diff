@@ -56,7 +56,7 @@ export default function Upload({ docA, docB, loading, onFile, progress, error }:
         {error && <p className="error">{error}</p>}
         <ul className="hints">
           <li><b>Pairing</b> by title-block sheet number (e.g. 2/26), otherwise by page order</li>
-          <li><b>Text</b> word diff with character refinement · <b>Graphics</b> pixel diff (vector diff in phase 2)</li>
+          <li><b>Text</b> word diff with character refinement · <b>Graphics</b> vector diff (moved / resized / restyled) + pixel diff · <b>Grid</b> refs from border zones</li>
           <li><b>Export</b> the change list as plain text</li>
         </ul>
       </div>

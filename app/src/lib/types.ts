@@ -1,3 +1,4 @@
+import type { GridInfo } from './grid';
 /** Shared data model for the diff engine and the UI. All coordinates are PDF points
  *  in the page's own top-left-origin space (viewport at scale 1). */
 export type BBox = [number, number, number, number]; // x0, y0, x1, y1
@@ -59,7 +60,7 @@ export interface Change {
   scale?: [number, number];
   /** graphics found by the vector layer: what was drawn, e.g. "Filled box", "Line", "Shape" */
   shape?: string;
-  /** grid reference such as "D3" or "C2–C3"; null until grid detection (phase 2) */
+  /** grid reference such as "D3" or "C2–C3"; null when the sheet has no detected border grid */
   gridRef: string | null;
   /** title-block change etc.; filled by folding */
   foldKey?: string;
@@ -80,6 +81,8 @@ export interface PairResult {
   pair: number;
   offset: [number, number]; // B minus A page offset (pt), compensated
   changes: Change[];
+  /** border grid of the sheet (from Rev B, else Rev A); null when the sheet has none */
+  grid?: GridInfo | null;
 }
 
 export interface DiffResult {
