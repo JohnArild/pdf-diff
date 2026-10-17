@@ -2,8 +2,9 @@ PDF DIFF REPORT
 ========================================================================
 Rev A      OHC0003_rev-_v28.pdf           Rev -   26 pages
 Rev B      OHC0003_revA_v29.pdf           Rev A   26 pages
-Generated  2026-10-17 10:16 (Europe/Oslo)
+Generated  2026-10-17 10:35 (Europe/Oslo)
 Grid       Border zone on 1/26 sheets, rows A-D, columns 1-8 (high confidence)
+Alignment  no page offset detected
 Totals     28 changes: 2 added, 0 removed, 26 modified
 ========================================================================
 

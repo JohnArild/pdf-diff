@@ -5,3 +5,4 @@ __pycache__/
 samples/
 prototype/samples/
 prototype/out/
+prototype/tests/out/

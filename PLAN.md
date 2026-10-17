@@ -18,7 +18,7 @@ A web app that compares two revisions of the same PDF and highlights what change
    - *Side by side* — synchronized pan/zoom, removed items marked on A, added on B.
    - *Overlay* — B drawn over A with colorized differences (classic "red/green" drawing compare).
    - *Slider* — a draggable wipe between A and B.
-5. **Change list sidebar** — every change as a row ("Page 2 · Text changed 'Rev 3' → 'Rev 4'"), grouped by page, with counts. **Changes that repeat on many sheets** (typically the REV letter, date or approver in every title block) are **folded into one row** ("All sheets · REV - → A · 26 sheets") that can be expanded (§4.7). Clicking a row zooms to it. Filters: **Text / Graphics / Images**, and **Added / Removed / Modified**. Rows can be marked *reviewed* or *ignored*.
+5. **Change list sidebar** — every change as a row ("Page 2 · Text changed 'Rev 3' → 'Rev 4'"), grouped by page, with counts. **Changes that repeat on many sheets** (typically the REV letter, date or approver in every title block) are **folded into one row** ("All sheets · REV - → A · 26 sheets") that can be expanded (§4.8). Clicking a row zooms to it. Filters: **Text / Graphics / Images**, and **Added / Removed / Modified**. Rows can be marked *reviewed* or *ignored*.
 6. **Export**
    - **Export list** button above the change list → **plain-text report (.txt)** with sheet number and grid reference per change (see §6). Copy to clipboard or download.
    - Annotated diff report PDF (summary + marked-up pages); CSV/JSON of the change list as secondary formats.
@@ -50,14 +50,21 @@ Keep the diff engine a pure module with a stable JSON result schema (`Change { i
 
 > **Lesson from the prototype (§11):** two exports of the *same, unchanged* drawing from different CAD/plot driver versions had 2–3.6× different path segment counts (curves tessellated differently). Matching operators/primitives 1:1 is therefore not viable as the primary method. The core matcher compares **sampled geometry within a tolerance** (step 3); primitive-level matching is only used to label and describe changes.
 
-1. **Parse the operator list** (`getOperatorList()` in PDF.js, or content stream server-side): track the graphics state stack (`q/Q`, `cm`), paths (`m l c v y h re`), and paint ops (`S f B n`, stroke/fill colors, line width, dash).
+1. **Parse the operator list** (`getOperatorList()` in PDF.js, or content stream server-side): track the graphics state stack (`q/Q`, `cm`), paths (`m l c v y h re`), paint ops (`S f B n`, stroke/fill colors, line width, dash) and **clip paths (`W n`)**. Geometry outside the active clip must be dropped: CAD viewports and placed Form XObjects rely on clipping, and ignoring it produced 16 false positives in a synthetic test (§11).
 2. **Normalize into primitives** in page space with the CTM applied: `Line`, `Bezier`, `Rect`, `Polygon/Path`, each with style (stroke/fill color, width). Split polylines into segments; canonicalize direction (A→B and B→A are equal); round coordinates to a tolerance (e.g. 0.1 pt). Expand Form XObjects; treat images as `ImagePrimitive(bbox, hash)`.
-3. **Match by sampled geometry with tolerance.** Flatten every path (curves into short polylines) and sample points along it at a fixed step (≈1 pt). Index B's samples in a KD-tree / spatial hash per **style key** (stroke/fill colour, paint type, optionally width). A sample in A is matched if a same-style sample in B lies within ε (≈1 pt, tunable per drawing scale), and vice versa. Unmatched samples in A are **removed**, unmatched in B are **added**. Overlapping removed + added regions, or geometry that matches only when style is ignored, become **modified**. This holds up when paths are re-segmented, reordered or re-tessellated. As a fast path, exact canonical-hash matches of whole primitives can be removed first when both files come from the same exporter.
-4. **Cluster** unmatched samples into regions (rasterise to a mask, dilate by a few pt, label connected components) so the UI shows "Wall added" as one change instead of 40 segments. Then describe each region from the primitives it touches. Detect **moved** groups by matching region shape signatures under translation.
-5. **Raster fallback.** Render both pages at high DPI (e.g. 200–300) in tiles, compute a pixel diff (with 1–2 px dilation tolerance for anti-aliasing), and surface regions not explained by the vector/text diff. This catches images, shadings, odd operators, and parser gaps — a safety net that keeps the tool trustworthy.
-6. **Page offset alignment.** Before matching, estimate a global translation (and optionally scale) between A and B — e.g. from matched text anchors or phase correlation of thumbnails — so a re-plotted sheet that shifted 2 mm isn't "everything changed".
-7. **Title block detection and repeated changes.** Detect the title block region on each sheet: the dense ruled box with labels such as `DWG NO`, `SHEET`, `REV`, `SCALE`, usually bottom-right and the same layout across the set. Tag changes inside it as *title block* changes. When an identical change (same op, same before/after text, same relative position in the title block) occurs on many sheets, fold it into **one document-level change** listing the affected sheets. A revision bump otherwise produces one noise row per sheet (26 of 28 changes in the prototype test). Revision tables are treated as normal content, since a new row there is a real change.
-8. **Change-log vs. drawing cross-check (candidate feature, phase 4).** Parse the revision table (`REV / DESCRIPTION / DATE`) and any referenced find numbers or zones. For a new revision entry, check whether the cited sheet or item actually has geometry or text changes, and flag mismatches both ways: "Rev A says FN 21 indica extended, but no geometry changed on sheet 22", or "geometry changed on sheet 7, no revision entry mentions it". The prototype found exactly such a case (§11).
+3. **Match by sampled geometry with tolerance.** Flatten every path (curves into short polylines) and sample points along it at a fixed step (≈1 pt). Index B's samples in a KD-tree / spatial hash per **style key** (stroke/fill colour, paint type, **line width and dash pattern**; without width and dash, width-only and dash-only changes go unseen). A sample in A is matched if a same-style sample in B lies within ε (≈1 pt, tunable per drawing scale), and vice versa. Unmatched samples in A are **removed**, unmatched in B are **added**. Overlapping removed + added regions, or geometry that matches only when style is ignored, become **modified**. This holds up when paths are re-segmented, reordered or re-tessellated. As a fast path, exact canonical-hash matches of whole primitives can be removed first when both files come from the same exporter.
+4. **Cluster** unmatched samples into regions (rasterise to a mask, dilate by a few pt, label connected components) so the UI shows "Wall added" as one change instead of 40 segments. Then describe each region from the primitives it touches.
+5. **Pair removed and added shapes** before reporting them (validated in the prototype, §11):
+   - Split paths into connected **sub-paths**, since one PDF path object often holds many shapes.
+   - Group the sub-paths that are mostly unmatched.
+   - Fit each removed group against each added group with a **similarity transform**: scale from the RMS radius, a coarse-then-fine rotation search (smallest angle wins for symmetric shapes), and ICP translation.
+   - Accept the pair at ≥85 % two-way sample agreement and classify it as **Moved (dx, dy)**, **Resized (×s)**, **Rotated (θ about pivot)** or **Style only** (colour/width/dash, identity transform).
+   - Removed and added words with the same text vote on a common offset, which becomes **Moved text**.
+   - Grid refs for moved items read `old>new` (e.g. `B2>B3`).
+6. **Raster fallback.** Render both pages at high DPI (e.g. 200–300) in tiles, compute a pixel diff (with 1–2 px dilation tolerance for anti-aliasing), and surface regions not explained by the vector/text diff. This catches images, shadings, odd operators, and parser gaps — a safety net that keeps the tool trustworthy.
+7. **Page offset alignment.** Before matching, estimate a global translation (and optionally scale) between A and B — e.g. from matched text anchors or phase correlation of thumbnails — so a re-plotted sheet that shifted 2 mm isn't "everything changed". **Verify the candidate against the geometry** and accept it only if it clearly raises the vector match rate. A text-only estimate is fooled when most text has moved (e.g. a relocated notes block). Report the compensated offset in the report header.
+8. **Title block detection and repeated changes.** Detect the title block region on each sheet: the dense ruled box with labels such as `DWG NO`, `SHEET`, `REV`, `SCALE`, usually bottom-right and the same layout across the set. Tag changes inside it as *title block* changes. When an identical change (same op, same before/after text, same relative position in the title block) occurs on many sheets, fold it into **one document-level change** listing the affected sheets. A revision bump otherwise produces one noise row per sheet (26 of 28 changes in the prototype test). Revision tables are treated as normal content, since a new row there is a real change.
+9. **Change-log vs. drawing cross-check (candidate feature, phase 4).** Parse the revision table (`REV / DESCRIPTION / DATE`) and any referenced find numbers or zones. For a new revision entry, check whether the cited sheet or item actually has geometry or text changes, and flag mismatches both ways: "Rev A says FN 21 indica extended, but no geometry changed on sheet 22", or "geometry changed on sheet 7, no revision entry mentions it". The prototype found exactly such a case (§11).
 
 ## 5. Grid detection & sheet references
 
@@ -76,7 +83,7 @@ Goal: every change carries a location a human can find on paper, e.g. `Sheet A-1
 **5.3 Cell boundaries**
 - If border ticks were found, use them as boundaries. Otherwise use the **midpoints between neighbouring label centres**, extended half a step beyond the first and last label (clamped to the frame).
 - For a structural grid, cells are the bays *between grid lines*; a reference is given as the bay (`C–D/2–3`), or as the nearest line intersection (`C/2`) for things lying on a line.
-- Apply the page rotation and the Rev A↔B alignment offset (§4.6), so a change gets the same reference on both revisions.
+- Apply the page rotation and the Rev A↔B alignment offset (§4.7), so a change gets the same reference on both revisions.
 
 **5.4 Which grid to use**
 - When both exist (common on plans), default to the **border grid** for report references, since it covers the whole sheet including the title block and notes, and offer the structural grid as an option ("Grid: Border | Structural | None").
@@ -99,8 +106,8 @@ When detection fails or is wrong: in a "Calibrate grid" mode the user clicks the
 
 - **Export list** button (with `.txt ▾` dropdown for CSV/JSON later) next to the change list header. It exports *all changes* or *the current filter*, grouped by sheet, in UTF-8 with LF line endings and fixed-width columns (≤ 80 cols), so it pastes cleanly into email, tickets or RFI logs.
 - The header reports **grid coverage**, e.g. `Grid  Border zone on 1/26 sheets, rows A-D, columns 1-8`, so a reader knows why most refs are `-`.
-- Changes folded across sheets (§4.7) are listed once in a **"Repeated on many sheets"** block before the per-sheet groups. Sheets with nothing else are summarised in one line at the end ("No other changes on 24 sheets: …").
-- Columns: `Sheet`, `Grid` (`-` if none), `Type` (Added / Removed / Modified / Moved) and `Description` (object kind + detail; text shown as `"old" -> "new"`, long text truncated with `...`).
+- Changes folded across sheets (§4.8) are listed once in a **"Repeated on many sheets"** block before the per-sheet groups. Sheets with nothing else are summarised in one line at the end ("No other changes on 24 sheets: …").
+- Columns: `Sheet`, `Grid` (`-` if none; `old>new` for moved items), `Type` (Added / Removed / Modified / Moved / Resized / Rotated) and `Description` (object kind + detail; text shown as `"old" -> "new"`, long text truncated with `...`).
 - The order within a sheet follows the grid (row, then column) so the list reads like the drawing. Rows marked *ignored* are excluded; *reviewed* rows can optionally get a `[x]` marker.
 
 Example:
@@ -164,9 +171,9 @@ Use semi-transparent fill + solid 1.5 px outline; add patterns/icons for color-b
 |---|---|---|
 | **0. Spike** ✅ (Python prototype done, §11) | Prove text diff, sampled-geometry vector matching, grid detection and the .txt report on a real drawing set. Next: port the core to PDF.js `getOperatorList()` in a worker and confirm parity on the same files | 1 wk |
 | **1. MVP** | Upload 2 PDFs, page pairing **by title-block sheet number, then page order**, title block detection with **folding of repeated changes**, text diff (word + char), raster pixel-diff for graphics, side-by-side view with synced zoom, change list with Text/Graphics filter, red/green/amber, **plain-text change list export** (sheet number from title block or `Page n`; grid column `-`) | 3–4 wks |
-| **2. True vector diff** | **Sampled-geometry matching with tolerance** (KD-tree per style) + region clustering + primitive-based descriptions, overlay and slider views, global offset alignment, **grid detection** (border + structural, either label direction, grid coverage in report header), grid refs in the list and the .txt export, manual grid calibration | 4–5 wks |
+| **2. True vector diff** | **Sampled-geometry matching with tolerance** (KD-tree per style incl. width/dash, clip-aware) + region clustering + **shape pairing into moved/resized/rotated/style-only** + primitive-based descriptions, overlay and slider views, global offset alignment, **grid detection** (border + structural, either label direction, grid coverage in report header), grid refs in the list and the .txt export, manual grid calibration | 4–5 wks |
 | **3. Documents at scale** | Inserted/deleted page alignment + manual override, workers/tiling/caching, export report PDF | 2–3 wks |
-| **4. Polish & pro** | Moved detection, **change-log vs. drawing cross-check** (§4.8), review/ignore states, shareable sessions, optional server worker, OCR for scans, auth if hosted | ongoing |
+| **4. Polish & pro** | Dimension objects (link a dimension value to its extension lines and arrows), precision mode below 1 pt, **change-log vs. drawing cross-check** (§4.9), review/ignore states, shareable sessions, optional server worker, OCR for scans, auth if hosted | ongoing |
 
 **Why grid detection goes in phase 2:** it needs the parsed vector primitives (frame, ticks, bubbles, grid lines) and the page alignment, both built in phase 2. The MVP export already has the `Grid` column, filled with `-`, so the format doesn't change when grid detection arrives. It also comes before the scale work in phase 3 because it makes the report much more useful for drawing review.
 
@@ -195,11 +202,16 @@ A Python prototype (`prototype/pdfdiff.py`, PyMuPDF + SciPy, about 12 s for 26 s
 | Finding | Consequence for the plan |
 |---|---|
 | Unchanged views had **2–3.6× different segment counts** between the two exports | Sampled-geometry matching with tolerance is the primary vector method (§4.3) |
-| **26 of 28** changes were the REV letter `-` → `A` in every title block | Title block detection + folding of repeated changes (§4.7, §6) |
+| **26 of 28** changes were the REV letter `-` → `A` in every title block | Title block detection + folding of repeated changes (§4.8, §6) |
 | Grid columns numbered **right→left**, rows **A at the bottom** (ASME); a fixed edge band missed the row letters | Direction-agnostic labels, band relative to page size (§5.1–5.2) |
 | **25 of 26 sheets have no grid** | No-grid is normal; header reports grid coverage (§5.4, §6) |
 | Sheet numbers `n/26` paired all pages correctly | Pair by title-block sheet number first (§1.2) |
-| Rev A's change log describes an indica change on sheet 22, but only a note + leader were added; the views are identical at 300 dpi | Candidate feature: change-log vs. drawing cross-check (§4.8) |
+| Rev A's change log describes an indica change on sheet 22, but only a note + leader were added; the views are identical at 300 dpi | Candidate feature: change-log vs. drawing cross-check (§4.9) |
 | Real pair had **no moved geometry**; synthetic added shapes were found in the right cells (C6, B4–B5), self-compare gave 0 changes | Test corpus needs moved-geometry cases (§9) |
 
 Result after folding: 1 repeated title-block change and 2 real changes (sheet 1 `D1–D3` new revision-history row; sheet 22 new paint note), with no false positives.
+
+**Synthetic follow-up** (`prototype/tests/`, 14 pairs, 14 expected changes):
+- Coverage: moved (50 / 5 / 2 / 0.5 pt), resized, rotated, dimension edit, moved text, whole-sheet shift, style-only, re-segmented and re-wrapped negative controls, and a view moved on an OpenHornet sheet.
+- Before the changes in §4.1, 4.3, 4.5 and 4.7: 2 of 14 right and 20 false positives. After: **14 of 14 right, 0 false positives, all no-change cases clean**.
+- Remaining gaps: moves below the 1 pt tolerance are invisible by design, and a dimension's text and geometry come out as two rows. Details are in `prototype/tests/RESULTS.md`.
