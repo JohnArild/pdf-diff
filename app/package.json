@@ -1,0 +1,30 @@
+{
+  "name": "pdf-diff-app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "screenshots": "playwright test e2e/screenshots.spec.ts"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^5.6.205",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "~5.9",
+    "vite": "^8.3.4",
+    "vitest": "^4.1.12"
+  }
+}

@@ -2,13 +2,47 @@
 
 A web app that compares two revisions of the same PDF and highlights what changed, in both **text** and **vector graphics** (technical drawings, plans, schematics). Changes are shown side by side, as an overlay, or with a slider. They are listed with sheet number and drawing grid reference (e.g. `Sheet 1/26  D1–D3  Added  ...`) and can be exported as a plain-text report.
 
-**Status:** planning + prototype. No web app code yet.
+**Status:** first browser increment in [`app/`](app/) (side-by-side viewer, text diff, raster graphics diff, change list, plain-text export). The Python prototype in `prototype/` is the reference for the vector diff and grid detection still to come.
 
 - [`PLAN.md`](PLAN.md): technical plan (architecture, text/vector diffing, grid detection, report format, milestones, prototype findings)
 - [`docs/mockups/`](docs/mockups/): UI mockups (`mockup.png`, `export-preview.png`), built from `gen.py`, which writes the HTML; screenshot it with headless Chrome
+- [`app/`](app/): the web app (Vite + React + TypeScript + PDF.js); runs entirely in the browser
 - [`prototype/`](prototype/): Python proof of concept for the diff engine
 
 ![Mockup](docs/mockups/mockup.png)
+
+## Running the web app
+
+Requires Node.js 20+.
+
+```bash
+cd app
+npm install
+npm run dev                 # http://localhost:5173, then drop Rev A (old) and Rev B (new)
+npm run build               # type-check + production build into app/dist/
+npm test                    # unit tests (vitest): diff, pairing, folding, report, raster
+```
+
+End-to-end tests and screenshots use Playwright. They need the OpenHornet samples (`prototype/fetch_samples.sh`, see below) and a Chromium. An installed Chrome at `/usr/bin/google-chrome` or `$CHROME_PATH` is used; otherwise run `npx playwright install chromium` once.
+
+```bash
+(cd prototype && ./fetch_samples.sh)
+cd app
+npm run test:e2e            # OpenHornet rev - -> rev A expectations + self-vs-self = 0 changes; also writes the screenshots
+npm run screenshots         # only regenerate docs/screenshots/*.png
+```
+
+What the app does today:
+
+- **Pairing** by title-block sheet number (`n/m` next to `SHEET`, or `n OF m`), else by page order. Pages without a partner are listed as inserted or deleted.
+- **Text diff:** PDF.js positioned words, then a word-level Myers diff in reading order (in a Web Worker). Replacements in place become *modified* with a character-level refinement. Edit runs are split spatially, and cells of one table row are merged. Words that only moved in reading order are ignored. A page offset is estimated from words that are unique on both pages.
+- **Graphics diff (MVP):** each pair is rendered at 150 DPI (long side capped at 4200 px). B is shifted by the offset candidate that leaves the fewest differing pixels. A tolerant 3×3 pixel comparison runs in a Web Worker, text-change areas are masked out, and the rest is clustered into regions. The vector diff from the prototype comes in phase 2.
+- **Folding:** a change repeated identically on ≥ half of the paired sheets (e.g. the title-block REV letter) is listed once.
+- **UI:** synced zoom (wheel, around the cursor) and pan (drag) in both panes. Click a change to jump and zoom to it. Filters are All / Text / Graphics. Export shows a preview, **Copy** and **Download .txt** (PLAN.md §6 format). The grid column shows `-` until grid detection lands (phase 2); the data model already has a `gridRef` slot.
+
+![Sheet 22, added note and leader line](docs/screenshots/02-sheet22-note.png)
+
+More screenshots are in [`docs/screenshots/`](docs/screenshots/).
 
 ## Running the prototype
 
@@ -49,4 +83,4 @@ google-chrome --headless=new --hide-scrollbars --window-size=1600,1000 --screens
 
 ## Attribution
 
-The test drawings (OHC0003 "ASSY, KNOBS", rev - and rev A) are from the **OpenHornet** project, <https://github.com/jrsteensen/OpenHornet>, © OpenHornet contributors, licensed **CC BY-NC-SA 4.0**. They are not included in this repository. `prototype/fetch_samples.sh` downloads them from the original repository. The sheet renders in `prototype/examples/` show these drawings with diff highlights and are shared under the same license, non-commercially, with attribution.
+The test drawings (OHC0003 "ASSY, KNOBS", rev - and rev A) are from the **OpenHornet** project, <https://github.com/jrsteensen/OpenHornet>, © OpenHornet contributors, licensed **CC BY-NC-SA 4.0**. They are not included in this repository. `prototype/fetch_samples.sh` downloads them from the original repository. The sheet renders in `prototype/examples/` and the app screenshots in `docs/screenshots/` show these drawings with diff highlights and are shared under the same license, non-commercially, with attribution.
