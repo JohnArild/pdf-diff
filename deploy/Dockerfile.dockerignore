@@ -1,0 +1,9 @@
+# Only app/ is needed to build the image (plus deploy/nginx.conf).
+*
+!app/
+!deploy/nginx.conf
+app/node_modules/
+app/dist/
+app/test-results/
+app/playwright-report/
+app/*.tsbuildinfo

@@ -15,6 +15,7 @@ Contents:
 9. [Backlog (prioritised)](#9-backlog-prioritised)
 10. [Field testing: deployment and bug reports](#10-field-testing-deployment-and-bug-reports)
 11. [Working conventions for the bot](#11-working-conventions-for-the-bot)
+12. [Production deployment (pdfdiff.lb1oi.com)](#12-production-deployment-pdfdifflb1oicom)
 
 Other documents: [`PLAN.md`](../PLAN.md) (the original technical plan, milestone table in §9 now carries status markers),
 [`README.md`](../README.md) (short overview and commands), [`prototype/tests/RESULTS.md`](../prototype/tests/RESULTS.md)
@@ -464,6 +465,7 @@ All processing is client-side, so the app is a **static site** (`npm run build` 
 - **Netlify / Cloudflare Pages**: connect the repo, build command `npm run build` in `app/`, publish directory
   `app/dist`. Works with a private repo.
 - Drawings never leave the browser on any of these hosts.
+- **Production (in use)**: Docker container on the user's VPS behind Caddy at https://pdfdiff.lb1oi.com, see §12.
 
 ### 10.2 How to report a bug
 
@@ -494,3 +496,48 @@ All processing is client-side, so the app is a **static site** (`npm run build` 
 - **Verify grid refs visually**: render the sheet, draw the change boxes and compare with the printed zone labels.
 - **Check screenshots** after regenerating them (open the PNGs and look at them).
 - Report times to the user in Europe/Oslo; send, post or share nothing outside the repo without approval.
+
+## 12. Production deployment (pdfdiff.lb1oi.com)
+
+The field-test instance runs on the user's VPS (Hetzner, Ubuntu 26.04, hostname `ubuntu-8gb-hel1-2`).
+
+**Access.** Only over Tailscale: `ssh -i ~/.ssh/id_ed25519_pdfdiff john@100.112.237.12` from the bot's box (the
+MagicDNS name does not resolve there; use the IP). User `john` is in the `docker` group but has **no passwordless
+sudo**. Anything needing root goes to the user as a one-liner, or as a script in `/tmp` on the server that the user
+reviews and runs with `sudo`. The public firewall (UFW and the Hetzner firewall) only opens TCP 80/443.
+
+**Layout.**
+- `/home/john/pdfdiff`: a plain clone of this public repo (`https://github.com/JohnArild/pdf-diff.git`, no
+  credentials on the server).
+- `deploy/Dockerfile`: multi-stage build. `node:22-alpine` runs `npm ci && npm run build` in `app/`, then
+  `nginxinc/nginx-unprivileged:1.28-alpine` serves `dist/` as uid 101 on port 8080. The context is the repo root,
+  and `deploy/Dockerfile.dockerignore` limits it to `app/` and `deploy/nginx.conf`.
+- `deploy/nginx.conf`: SPA fallback to `index.html`, `.mjs` (pdf.js worker) served as `text/javascript`, gzip,
+  `/assets/*` and `*.mjs` cached for 1 year (immutable, hashed names), everything else `Cache-Control: no-cache`,
+  and `/healthz` for the healthcheck.
+- `deploy/docker-compose.yml`: project `pdfdiff`, container `pdfdiff`, image `pdfdiff:latest`, published **only**
+  on `127.0.0.1:8095`. It has `restart: unless-stopped`, a read-only root fs with tmpfs `/tmp`, `cap_drop: ALL`,
+  `no-new-privileges`, `mem_limit: 128m`, and json-file log rotation (10m x 3) for this container only.
+- Host Caddy (`caddy.service`, v2.6.2, Ubuntu package) has a `pdfdiff.lb1oi.com` block in `/etc/caddy/Caddyfile`
+  with `encode gzip zstd`, HSTS, nosniff and Referrer-Policy headers, and `reverse_proxy 127.0.0.1:8095`. TLS comes
+  from Caddy's automatic HTTPS. The block was added by a reviewed script
+  (`pdfdiff-caddy.sh`: back up to `Caddyfile.bak-pdfdiff-<timestamp>`, append if missing, `caddy validate`, restore
+  on failure, `systemctl reload caddy`). Do **not** use the Caddy admin API (`127.0.0.1:2019`).
+- Vite `base` is the default `/`, which is correct for serving at the domain root.
+
+**Update to the latest `main`** (no sudo):
+```bash
+ssh -i ~/.ssh/id_ed25519_pdfdiff john@100.112.237.12 '~/pdfdiff/deploy/update.sh'
+```
+`update.sh` runs `git pull --ff-only` and `docker compose -f deploy/docker-compose.yml up -d --build`. It then
+removes only the previous `pdfdiff` image, waits for the healthcheck and curls `http://127.0.0.1:8095/`.
+
+**Checks:** `docker ps --filter name=^pdfdiff$`, `docker logs pdfdiff`,
+`curl -sI http://127.0.0.1:8095/assets/<pdf.worker...>.mjs` (expect `text/javascript`), and from outside
+`curl -sI https://pdfdiff.lb1oi.com/`.
+
+**Leave alone.** The server also runs the user's other services: Caddy sites `odysseus.lb1oi.com`,
+`hermes.lb1oi.com` and `hermes-test.lb1oi.com`, compose projects `hermes-docker`, `odysseus` and `openbrain` in
+`/home/john`, and ports 127.0.0.1:3000/7000/8080/8091/8100/8788/2019, plus 9119/8443 on the Tailscale IP. Known
+security findings on the server are accepted risks owned by the user. Change nothing outside the `pdfdiff` project
+and its Caddy block. Never prune Docker images, volumes or build cache globally.

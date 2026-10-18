@@ -1,0 +1,27 @@
+# PDF Diff on the VPS: reachable only on 127.0.0.1:8095, published by the host's
+# Caddy as https://pdfdiff.lb1oi.com.  Update with deploy/update.sh.
+name: pdfdiff
+
+services:
+  pdfdiff:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: pdfdiff:latest
+    container_name: pdfdiff
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8095:8080"
+    read_only: true
+    tmpfs:
+      - /tmp            # nginx pid file and temp dirs (unprivileged image)
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
