@@ -167,13 +167,15 @@ Use semi-transparent fill + solid 1.5 px outline; add patterns/icons for color-b
 
 ## 9. Milestones
 
-| Phase | Scope | Est. |
-|---|---|---|
-| **0. Spike** ✅ (Python prototype done, §11) | Prove text diff, sampled-geometry vector matching, grid detection and the .txt report on a real drawing set. Next: port the core to PDF.js `getOperatorList()` in a worker and confirm parity on the same files | 1 wk |
-| **1. MVP** | Upload 2 PDFs, page pairing **by title-block sheet number, then page order**, title block detection with **folding of repeated changes**, text diff (word + char), raster pixel-diff for graphics, side-by-side view with synced zoom, change list with Text/Graphics filter, red/green/amber, **plain-text change list export** (sheet number from title block or `Page n`; grid column `-`) | 3–4 wks |
-| **2. True vector diff** | **Sampled-geometry matching with tolerance** (KD-tree per style incl. width/dash, clip-aware) + region clustering + **shape pairing into moved/resized/rotated/style-only** + primitive-based descriptions, overlay and slider views, global offset alignment, **grid detection** (border + structural, either label direction, grid coverage in report header), grid refs in the list and the .txt export, manual grid calibration | 4–5 wks |
-| **3. Documents at scale** | Inserted/deleted page alignment + manual override, workers/tiling/caching, export report PDF | 2–3 wks |
-| **4. Polish & pro** | Dimension objects (link a dimension value to its extension lines and arrows), precision mode below 1 pt, **change-log vs. drawing cross-check** (§4.9), review/ignore states, shareable sessions, optional server worker, OCR for scans, auth if hosted | ongoing |
+Status (2026-10-18, details in [`docs/HANDOVER.md`](docs/HANDOVER.md) §2): ✅ done · 🟡 partly done · ⬜ not started.
+
+| Phase | Scope | Est. | Status |
+|---|---|---|---|
+| **0. Spike** ✅ (Python prototype done, §11) | Prove text diff, sampled-geometry vector matching, grid detection and the .txt report on a real drawing set. Next: port the core to PDF.js `getOperatorList()` in a worker and confirm parity on the same files | 1 wk | ✅ done (`cc99b63`, `282669e`) |
+| **1. MVP** | Upload 2 PDFs, page pairing **by title-block sheet number, then page order**, title block detection with **folding of repeated changes**, text diff (word + char), raster pixel-diff for graphics, side-by-side view with synced zoom, change list with Text/Graphics filter, red/green/amber, **plain-text change list export** (sheet number from title block or `Page n`; grid column `-`) | 3–4 wks | ✅ done (`3e0edca`; extended in `d963f29`, `cf6bf05`) |
+| **2. True vector diff** | **Sampled-geometry matching with tolerance** (KD-tree per style incl. width/dash, clip-aware) + region clustering + **shape pairing into moved/resized/rotated/style-only** + primitive-based descriptions, overlay and slider views, global offset alignment, **grid detection** (border + structural, either label direction, grid coverage in report header), grid refs in the list and the .txt export, manual grid calibration | 4–5 wks | 🟡 partly: **done** in the app: vector layer (box + style + point signature), moved/resized/style-only (fill, stroke, width) pairing with pixel confirmation, offset alignment, border-grid detection (either direction), grid refs in list and export, grid coverage header. **Missing**: sampled-geometry matching with tolerance (prototype only), rotation, dash, clip awareness, overlay/slider views, structural grids, manual grid calibration |
+| **3. Documents at scale** | Inserted/deleted page alignment + manual override, workers/tiling/caching, export report PDF | 2–3 wks | ⬜ not started (diffing already runs in workers; inserted/deleted pages are listed) |
+| **4. Polish & pro** | Dimension objects (link a dimension value to its extension lines and arrows), precision mode below 1 pt, **change-log vs. drawing cross-check** (§4.9), review/ignore states, shareable sessions, optional server worker, OCR for scans, auth if hosted | ongoing | ⬜ not started |
 
 **Why grid detection goes in phase 2:** it needs the parsed vector primitives (frame, ticks, bubbles, grid lines) and the page alignment, both built in phase 2. The MVP export already has the `Grid` column, filled with `-`, so the format doesn't change when grid detection arrives. It also comes before the scale work in phase 3 because it makes the report much more useful for drawing review.
 

@@ -47,7 +47,6 @@ function runWorker<T>(w: Worker, msg: unknown, transfer: Transferable[] = []): P
   });
 }
 
-/** Raster diff resolution: 150 DPI, capped so the long side stays within RASTER_MAX_PX pixels. */
 /** Painted paths of one page from its operator list (separate from the render cache, so data is untouched). */
 export async function pageShapes(pdf: PDFDoc, index: number): Promise<Shape[]> {
   const page = await pdf.getPage(index + 1);
@@ -55,6 +54,7 @@ export async function pageShapes(pdf: PDFDoc, index: number): Promise<Shape[]> {
   return extractShapes(ol.fnArray, ol.argsArray, pdfjs.OPS as unknown as OpsTable, page.getViewport({ scale: 1 }).transform);
 }
 
+/** Raster diff resolution: 150 DPI, capped so the long side stays within RASTER_MAX_PX pixels. */
 export const RASTER_DPI = 150;
 export const RASTER_MAX_PX = 4200;
 

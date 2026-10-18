@@ -1,8 +1,10 @@
 # PDF Diff
 
-A web app that compares two revisions of the same PDF and highlights what changed, in both **text** and **vector graphics** (technical drawings, plans, schematics). Changes are shown side by side, as an overlay, or with a slider. They are listed with sheet number and drawing grid reference (e.g. `Sheet 1/26  D1–D3  Added  ...`) and can be exported as a plain-text report.
+> **Start here: [`docs/HANDOVER.md`](docs/HANDOVER.md)**: goal, status, history, architecture, how to run, test corpus, known limits, backlog and working conventions.
 
-**Status:** first browser increment in [`app/`](app/) (side-by-side viewer, text diff, vector + raster graphics diff, border-grid references, change list, plain-text export). The Python prototype in `prototype/` is the reference for sampled-geometry matching, which is still to come.
+A web app that compares two revisions of the same PDF and highlights what changed, in both **text** and **vector graphics** (technical drawings, plans, schematics). Changes are shown side by side (overlay and slider views are planned). They are listed with sheet number and drawing grid reference (e.g. `Sheet 1/26  D1–D3  Added  ...`) and can be exported as a plain-text report.
+
+**Status:** MVP ready for field testing in [`app/`](app/) (side-by-side viewer, text diff, vector + raster graphics diff, border-grid references, change list, plain-text export). The Python prototype in `prototype/` is the reference for sampled-geometry matching, which is still to come.
 
 - [`PLAN.md`](PLAN.md): technical plan (architecture, text/vector diffing, grid detection, report format, milestones, prototype findings)
 - [`docs/mockups/`](docs/mockups/): UI mockups (`mockup.png`, `export-preview.png`), built from `gen.py`, which writes the HTML; screenshot it with headless Chrome
@@ -13,7 +15,7 @@ A web app that compares two revisions of the same PDF and highlights what change
 
 ## Running the web app
 
-Requires Node.js 20+.
+Requires Node.js 20.19+ (22 recommended).
 
 ```bash
 cd app
